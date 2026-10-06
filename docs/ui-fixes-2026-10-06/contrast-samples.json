@@ -1,0 +1,44 @@
+[
+  {
+    "background": "rgb(245, 242, 236)",
+    "foreground": "rgb(37, 41, 37)",
+    "ratio": 13.21,
+    "selector": ".finding p"
+  },
+  {
+    "background": "rgb(233, 243, 238)",
+    "foreground": "rgb(37, 41, 37)",
+    "ratio": 13.02,
+    "selector": ".attention-summary p"
+  },
+  {
+    "background": "rgb(36, 93, 80)",
+    "foreground": "rgb(255, 255, 255)",
+    "ratio": 7.62,
+    "selector": ".btn.primary"
+  },
+  {
+    "background": "rgb(233, 243, 238)",
+    "foreground": "rgb(36, 93, 80)",
+    "ratio": 6.72,
+    "selector": ".nav-item.active"
+  },
+  {
+    "background": "rgb(255, 242, 215)",
+    "foreground": "rgb(122, 74, 14)",
+    "ratio": 6.73,
+    "selector": ".pill.amber"
+  },
+  {
+    "background": "rgb(232, 240, 246)",
+    "foreground": "rgb(53, 92, 118)",
+    "ratio": 6.19,
+    "selector": ".chip.on"
+  },
+  {
+    "background": "rgb(246, 244, 239)",
+    "foreground": "rgb(73, 78, 72)",
+    "ratio": 7.75,
+    "selector": ".subtitle"
+  }
+]

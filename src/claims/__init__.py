@@ -1,0 +1,1 @@
+"""Synapt Claims Investigator."""

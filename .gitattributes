@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.sqlite binary
+*.png binary
+*.jpg binary
+*.md whitespace=-blank-at-eol

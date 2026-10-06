@@ -1,0 +1,17 @@
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+data/runtime/
+data/raw/
+artifacts/
+dist/
+frontend/node_modules/
+.deepeval/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+!data/bootstrap/auth.sqlite
+!data/bootstrap/claims.sqlite
