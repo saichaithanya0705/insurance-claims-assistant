@@ -84,16 +84,20 @@ upload anything. Confirm that it is reachable and populated:
 ```powershell
 uv run python scripts/verify_synapt_store.py
 uv run python scripts/synapt_ingest.py status
-uv run python scripts/synapt_ingest.py verify --sample 20
 ```
 
 `verify_synapt_store.py` is the authoritative check (and what `bootstrap.py check` runs): it reads
 document sizes from Synapt's graph and compares them with the committed
 `data/synapt/expected_inventory.json`, so it gives the same answer on every machine. Expect
 `base corpus: 10/10`, `expansion corpus: 40/40` and `procedures: 5/5`. `status` prints document and
-chunk counts. `verify` asks Synapt for cards similar to 20 sampled
-claims and reports how often the returned cards share the claim's type, state, amount band and
-history, next to the rate expected by chance.
+chunk counts (expect 63 documents and 20,914 chunks; `ledger_batches: 0` on a second machine is normal).
+
+`synapt_ingest.py verify --sample 20` is a semantic-precision spot check that only works on the machine
+that performed the upload. It samples claims from the local upload ledger
+(`artifacts/synapt/corpus-v3/ledger.jsonl`), which is not in Git, so anywhere else it exits with
+`No submitted batches in the ledger yet`. That is expected, not a fault: use `verify_synapt_store.py`.
+On the original machine it asks Synapt for cards similar to 20 sampled claims and reports how often the
+returned cards share the claim's type, state, amount band and history, next to the rate expected by chance.
 
 **The corpus built on a laptop is not the corpus in the provider.** `bootstrap.py corpus` rebuilds a
 1,000-card sample deterministically (two builds on one machine and a fresh clone were identical), but
@@ -141,13 +145,16 @@ uv run pytest -q                                   # backend: offline, about 2 m
 uv run python scripts/bootstrap.py check           # data, models, corpus, Synapt
 ```
 
-In the application: open **Quality & models** and press **Run evaluations** (golden cases), then
-submit the "Auto theft" example. You should see cited findings, a **Handling priority** breakdown,
+In the application: open **Quality & models** and press **Run evaluations** (golden cases). Tick
+**LLM judge** first to also run the three DeepEval metrics on each brief; without the tick the judge
+status stays `not_run`. With the judge the run takes several minutes (the page stays busy until it
+returns). Then submit the "Auto theft" example. You should see cited findings, a **Handling priority** breakdown,
 three model estimates with a "Why this estimate" explanation, and (when `JUDGE_MODE=inline`) an
 **Independent review** verdict.
 
 To rebuild the UI after editing `frontend/`: `Set-Location frontend; npm ci; npm run test;
-npm run build; Set-Location ..` (the build writes into `src/claims/static/app`).
+npm run build; Set-Location ..` (the build writes into `src/claims/static/app`). This needs
+**Node 20.19 or newer** (Vite 8); see Troubleshooting for the Windows notes.
 
 ## 8. Optional: reproduce the fraud experiments
 
@@ -226,3 +233,6 @@ model artifact and backend changes.
 | Brief says "Independent review: Failed" | The judge model timed out (60 s per attempt, two attempts; the endpoint is slower when several briefs run at once). The brief is unaffected. Raise `JUDGE_TIMEOUT_SECONDS` (max 120), pick a faster `JUDGE_MODEL`, or set `JUDGE_MODE=off` |
 | Model estimates show "not trained" | Run `bootstrap.py train`, or press **Train models** on the Quality page (about 80 s) |
 | Low on disk space | Use the 3,000-row fallback instead: `uv run python scripts/fetch_dataset.py --count 3000`, and leave `CLAIMS_PARQUET_PATH` pointing at a missing file. Retrieval and models then use that small sample |
+| `CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain` (also `winget` certificate errors, or `Synapt request failed` on every call) | A corporate proxy that inspects TLS (for example Netskope or Zscaler) re-signs traffic with a CA that Windows trusts but Python's bundled `certifi` list does not. Do not disable verification. Make Python use the Windows certificate store: save `import importlib.util; importlib.util.find_spec('truststore') and __import__('truststore').inject_into_ssl()` as one line in `.venv\Lib\site-packages\system_certs.pth` (`truststore` is already a dependency; the `.venv` is not in Git; recreate the file after rebuilding the venv). For `npm`, export the proxy's CA certificates to a PEM file and set `NODE_EXTRA_CA_CERTS` to it |
+| `npm run build` fails with `Cannot find module '@rolldown/binding-win32-x64-msvc'` | The Windows binding is optional and requires Node 20.19+ (or 22.12+). On an older Node, `npm ci` skips it silently (look for `EBADENGINE` warnings). Install a newer Node and run `npm ci` again |
+| `npm run test` says `Could not find '...tests\*.test.cjs'` | Node 20 on Windows does not expand the glob. Run `node --test tests/ui-regressions.test.cjs` instead |

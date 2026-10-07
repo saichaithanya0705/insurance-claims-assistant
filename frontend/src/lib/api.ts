@@ -336,15 +336,20 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+// Default request budget. Long-running server jobs (an evaluation with the LLM judge takes several
+// minutes) pass their own larger `timeoutMs`.
+const DEFAULT_TIMEOUT_MS = 180_000
+
+export async function api<T>(path: string, options: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...init } = options
   const abort = new AbortController()
-  const cancel = () => abort.abort(options.signal?.reason)
-  if (options.signal?.aborted) cancel()
-  else options.signal?.addEventListener('abort', cancel, { once: true })
-  const timeout = setTimeout(() => abort.abort(), 180_000)
+  const cancel = () => abort.abort(init.signal?.reason)
+  if (init.signal?.aborted) cancel()
+  else init.signal?.addEventListener('abort', cancel, { once: true })
+  const timeout = setTimeout(() => abort.abort(), timeoutMs)
   try {
     const response = await fetch(path, {
-      ...options,
+      ...init,
       headers: {
         'Content-Type': 'application/json',
         ...(apiKey ? { 'X-Claims-Api-Key': apiKey } : {}),
@@ -375,15 +380,15 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     if (body === null) throw new ApiError('The server returned an unreadable response.', response.status)
     return body as T
   } catch (error) {
-    if (options.signal?.aborted) throw error
+    if (init.signal?.aborted) throw error
     if (error instanceof DOMException && error.name === 'AbortError')
       throw new ApiError('The request timed out. The server may still be processing it; search Saved cases before submitting another investigation.', 0)
     throw error
   } finally {
     clearTimeout(timeout)
-    options.signal?.removeEventListener('abort', cancel)
+    init.signal?.removeEventListener('abort', cancel)
   }
 }
 
-export const post = <T>(path: string, body?: unknown) =>
-  api<T>(path, { method: 'POST', ...(body !== undefined ? { body: JSON.stringify(body) } : {}) })
+export const post = <T>(path: string, body?: unknown, options: { timeoutMs?: number } = {}) =>
+  api<T>(path, { method: 'POST', ...(body !== undefined ? { body: JSON.stringify(body) } : {}), ...options })

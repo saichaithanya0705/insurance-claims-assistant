@@ -150,10 +150,13 @@ export function QualityView() {
     setBusy('eval')
     setError(null)
     try {
-      const result = await post<EvaluationStatus>('/api/evaluations/run', { judge })
+      // Golden cases run live and the LLM judge adds three metrics per case: several minutes in total.
+      const result = await post<EvaluationStatus>('/api/evaluations/run', { judge }, { timeoutMs: 30 * 60_000 })
       setEvals(result)
       toast('Evaluation returned. Review the checks and judge status.')
     } catch (e) {
+      // The server keeps running after a dropped request, so show whatever it has finished.
+      await refresh()
       setError((e as Error).message)
     } finally {
       setBusy(null)
