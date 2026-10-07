@@ -467,3 +467,7 @@ sure" would have created permanent duplicates, because the tenant exposes no del
 The uploader's post-submit retrieval check (`verify_batch`) still cannot confirm a batch at this store
 size. This provider is complete, so it is documented rather than rewritten; new corpora belong in a new
 provider with their own inventory.
+
+A second limit surfaced when a fresh clone rebuilt the base corpus: `bootstrap.py corpus` is deterministic
+(three builds agree) but selects a different 1,000 claims from the ones uploaded (52 coincide), most likely because
+the uploaded batches came from an earlier builder that Git does not retain (an inference). No runtime code reads the local corpus, so this is documented, not changed.

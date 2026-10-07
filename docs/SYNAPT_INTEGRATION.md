@@ -50,7 +50,9 @@ add up exactly (1,000 + 19,888 + 26 = 20,914). Those 8 come from the earlier aud
 one by one by the check. The 100 million source
 claims are deliberately not in Synapt. **Do not upload the corpus again:** the tenant exposes no
 deletion tool, so duplicates would be permanent, and the ingestion script refuses to run while claim
-cards exist.
+cards exist. A base corpus rebuilt on another machine is deterministic but is a different sample from
+the uploaded one (52 of 1,000 claims coincide), so never compare a local `corpus-v3` with the provider's
+content; use the inventory check.
 
 **Clean-up for the console.** Four documents are leftovers of this work and can be deleted in the
 Synapt console without effect on the application (they carry no usable identifiers):

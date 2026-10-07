@@ -95,6 +95,15 @@ chunk counts. `verify` asks Synapt for cards similar to 20 sampled
 claims and reports how often the returned cards share the claim's type, state, amount band and
 history, next to the rate expected by chance.
 
+**The corpus built on a laptop is not the corpus in the provider.** `bootstrap.py corpus` rebuilds a
+1,000-card sample deterministically (two builds on one machine and a fresh clone were identical), but
+the sample uploaded earlier was selected differently (most likely by an earlier version of the builder,
+which Git does not retain): only 52 of its 1,000 claims coincide with the rebuilt ones. Nothing at runtime reads the local corpus, so the application is
+unaffected. It matters only if you populate a *new* provider with `bootstrap.py ingest`, which would
+upload a different, equally valid sample. The exact uploaded batches exist only on the original laptop
+(`artifacts/synapt/corpus-v3`, not in Git); `data/synapt/expected_inventory.json` records their sizes
+and hashes.
+
 To populate a **new, empty** provider (created in the Synapt console, knowledge kind), put its ID in
 `.env` and run:
 

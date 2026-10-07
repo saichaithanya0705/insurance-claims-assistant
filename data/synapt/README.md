@@ -17,3 +17,12 @@ provider passes it.
 
 How the check works, and why a retrieval-based inventory cannot do this job, is in
 [docs/SYNAPT_INTEGRATION.md](../../docs/SYNAPT_INTEGRATION.md). Do not upload more into this provider.
+
+## Rebuilding the corpus on another machine
+
+`bootstrap.py corpus` is deterministic: two builds here and a build in a fresh clone selected the same
+1,000 claims. It is not the sample that was uploaded, though: only 52 of the uploaded 1,000 claims
+coincide; the uploaded batches were most likely produced by an earlier version of the builder, which
+Git does not retain. Nothing at runtime
+reads the local corpus. The `chars` and `sha256` values above describe the uploaded batches, which exist
+only on the original laptop under `artifacts/synapt/corpus-v3` (not in Git).
