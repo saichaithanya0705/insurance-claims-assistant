@@ -471,3 +471,45 @@ provider with their own inventory.
 A second limit surfaced when a fresh clone rebuilt the base corpus: `bootstrap.py corpus` is deterministic
 (three builds agree) but selects a different 1,000 claims from the ones uploaded (52 coincide), most likely because
 the uploaded batches came from an earlier builder that Git does not retain (an inference). No runtime code reads the local corpus, so this is documented, not changed.
+
+
+# Per-query traces, observability and explainability — 2026-10-07
+
+## What I did
+Added `telemetry.py` (spans written to SQLite as they close), `observability.py` (per-run traces and system
+metrics), `explain.py` (how a saved brief was generated and evaluated), five API endpoints, two pages
+(Observability for administrators, Explainability for everyone) and an **Explain** tab on every brief. The
+workflow, model client, Synapt adapter and retriever record spans; `validate_brief` now also returns one
+result per rule. Runs saved before this change get a reconstructed trace from their audit events.
+Full description: [OBSERVABILITY_EXPLAINABILITY.md](OBSERVABILITY_EXPLAINABILITY.md).
+
+## Why this approach
+* **Spans in the existing SQLite, not a collector.** The service is one process and the audit log is already
+  there. Stage spans are parented through a registry rather than ambient context because the workflow engine
+  may run a node on another thread; the background review receives its context explicitly, and anything
+  recorded inside background work inherits that flag so it is not counted as time a handler waited.
+* **Reconstruct, do not backfill or leave blank.** Seventy saved runs (and the 55 shipped in the template)
+  would otherwise show nothing. The reconstruction is computed on read, never stored, and says it is
+  approximate on every page.
+* **A structural explanation, not a model-written one.** A language model asked to explain its own brief
+  would produce a plausible rationale that nothing guarantees is the real one. The explanation is built from
+  what was stored: the cited sources, the recorded ranks, the point rule, the validation results.
+* **Ranking detail kept apart.** `retriever.last_search` is pinned by tests and the case dictionaries are
+  fed to the models as evidence text, so per-method ranks live in a separate `last_trace` and in the span.
+* **Prompts are linked, not copied.** A model span stores the audit event ids of its prompt and answer; the
+  administrator opens them on demand. Copying them would roughly double the stored prompt volume.
+* **Colour was validated, not chosen.** The application's own teal, sky and violet fail a colour-blindness
+  check as a three-series set, so the one three-series chart uses slots that pass it.
+
+## Why not the alternative
+OpenTelemetry or Langfuse would add a dependency and an external collector for a single-process demo
+service. Backfilling spans for old runs would store guesses as if they were measurements.
+
+## Found while checking it in a browser, and fixed
+A handler's explanation repeated a line naming Synapt (the estimates note), and the review model's own call
+was counted as time spent waiting for the brief. Both have regression tests.
+
+## Known limit
+Reconstructed traces have no retrieval or scoring detail. Tokens are the provider's own figures and no price
+table exists, so no cost is shown. Spans are not pruned.
+

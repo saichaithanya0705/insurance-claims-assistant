@@ -10,6 +10,7 @@ from claims.demo import fixture_history
 from claims.models import ClaimInput, SearchFilters
 
 SEMANTIC_WEIGHT = 0.5
+RRF_K = 60
 
 
 def tokens(text):
@@ -39,6 +40,9 @@ class HistoricalRetriever:
         self.store: ClaimsStore | None = None
         # What Synapt's semantic list contributed to the most recent search (for the trace).
         self.last_search: dict = {"semantic_candidates": 0, "semantic_eligible": 0, "semantic_in_results": 0}
+        # How the most recent search ranked its results (for the trace); kept apart from
+        # ``last_search`` and from the case dictionaries, which models read as evidence text.
+        self.last_trace: dict = {}
         self.reload()
 
     def reload(self):
@@ -117,13 +121,17 @@ class HistoricalRetriever:
             self.last_search["semantic_eligible"] = sum(
                 row["claim_id"] in set(semantic_ids or []) for row in rows
             )
+            self.last_trace["sql_candidates"] = len(rows)
             return rows
         rows = self.store.candidates(claim, filters, limit=self.candidate_limit)
+        self.last_trace["sql_candidates"] = len(rows)
         if semantic_ids:
             seen = {row["claim_id"] for row in rows}
             eligible = self.store.candidates(claim, filters, ids=list(semantic_ids)[:100])
             self.last_search["semantic_eligible"] = len(eligible)
-            rows += [row for row in eligible if row["claim_id"] not in seen]
+            added = [row for row in eligible if row["claim_id"] not in seen]
+            rows += added
+            self.last_trace["semantic_added"] = len(added)
         return rows
 
     def search(
@@ -141,7 +149,19 @@ class HistoricalRetriever:
             "semantic_eligible": 0,
             "semantic_in_results": 0,
         }
+        self.last_trace = {
+            "source": "parquet" if self.store is not None else "sample",
+            "origin": self.origin,
+            "top_k": top_k,
+            "rrf_k": RRF_K,
+            "weights": {"keyword": 1.0, "feature": 1.0, "semantic": SEMANTIC_WEIGHT},
+            "sql_candidates": 0,
+            "semantic_added": 0,
+            "pool_size": 0,
+            "ranked": [],
+        }
         candidates = self._candidates(claim, filters, semantic_ids)
+        self.last_trace["pool_size"] = len(candidates)
         if not candidates:
             return []
         docs = [tokens(self.card(row)) for row in candidates]
@@ -175,7 +195,8 @@ class HistoricalRetriever:
         lex_ranks = {idx: rank for rank, idx in enumerate(lex_order, 1)}
         feat_ranks = {idx: rank for rank, idx in enumerate(feat_order, 1)}
         combined = {
-            i: 1 / (60 + lex_ranks[i]) + 1 / (60 + feat_ranks[i]) for i in range(len(candidates))
+            i: 1 / (RRF_K + lex_ranks[i]) + 1 / (RRF_K + feat_ranks[i])
+            for i in range(len(candidates))
         }
         semantic_ranks = {claim_id: rank for rank, claim_id in enumerate(semantic_ids or [], 1)}
         # Weighted fusion: Synapt holds only a sample of the history, so its nearest cards can be
@@ -183,7 +204,7 @@ class HistoricalRetriever:
         # weight, cannot displace claims that rank high on both keyword and feature similarity.
         for i, row in enumerate(candidates):
             if row["claim_id"] in semantic_ranks:
-                combined[i] += SEMANTIC_WEIGHT / (60 + semantic_ranks[row["claim_id"]])
+                combined[i] += SEMANTIC_WEIGHT / (RRF_K + semantic_ranks[row["claim_id"]])
         chosen = sorted(combined, key=combined.get, reverse=True)[:top_k]
         extras = []
         if semantic_ranks and semantic_extra:
@@ -198,6 +219,24 @@ class HistoricalRetriever:
             case = self._case(claim, candidates[i], combined[i], semantic_ranks, surfaced_by)
             self.last_search["semantic_in_results"] += case["semantic_match"]
             result.append(case)
+            semantic_rank = semantic_ranks.get(candidates[i]["claim_id"])
+            self.last_trace["ranked"].append(
+                {
+                    "claim_id": candidates[i]["claim_id"],
+                    "surfaced_by": surfaced_by,
+                    "keyword_rank": lex_ranks[i],
+                    "feature_rank": feat_ranks[i],
+                    "semantic_rank": semantic_rank,
+                    "keyword_score": round(lexical[i], 4),
+                    "feature_score": round(feature[i], 4),
+                    "keyword_points": round(1 / (RRF_K + lex_ranks[i]), 6),
+                    "feature_points": round(1 / (RRF_K + feat_ranks[i]), 6),
+                    "semantic_points": round(SEMANTIC_WEIGHT / (RRF_K + semantic_rank), 6)
+                    if semantic_rank
+                    else 0.0,
+                    "total": round(combined[i], 6),
+                }
+            )
         return result
 
     def _case(self, claim, row, score, semantic_ranks, surfaced_by):

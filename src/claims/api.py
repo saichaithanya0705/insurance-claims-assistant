@@ -1,5 +1,7 @@
+import logging
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import date
@@ -17,14 +19,21 @@ from claims.analytics import AnalyticsService
 from claims.auth import AuthStore, csrf_token
 from claims.demo import DEMO_CASES
 from claims.evaluation import EvaluationService
+from claims.explain import explain_run
 from claims.models import ClaimInput, ReviewDecision, SearchFilters, StrictModel
+from claims.observability import Observatory
 from claims.saved_search import SavedCaseSearch
 from claims.settings import Settings
 from claims.workflow import InvestigationService
 
+logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 # Production build of frontend/ (see frontend/vite.config.ts).
 APP_DIR = STATIC_DIR / "app"
+# Technical sub-resources of an investigation: prompts, raw events and the recorded trace are for
+# administrators; handlers get the plain-language explanation instead.
+ADMIN_SUBPATH = re.compile(r"/(?:review|audit|trace)(?:/\d+)?/?$")
+ID_SEGMENT = re.compile(r"/[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}")
 
 
 class InvestigationRequest(StrictModel):
@@ -63,6 +72,7 @@ def create_app(settings=None, adapter=None, analytics=None):
     service = InvestigationService(settings, adapter or build_synapt_adapter(settings), analytics)
     evaluation = EvaluationService(service, settings)
     case_search = SavedCaseSearch(service.store, settings)
+    observatory = Observatory(service.store)
     auth = (
         AuthStore(
             settings.claims_auth_database_path
@@ -84,6 +94,7 @@ def create_app(settings=None, adapter=None, analytics=None):
     app.state.service = service
     app.state.evaluation = evaluation
     app.state.case_search = case_search
+    app.state.observatory = observatory
     app.state.auth = auth
 
     @app.exception_handler(RequestValidationError)
@@ -201,7 +212,7 @@ def create_app(settings=None, adapter=None, analytics=None):
                 actor
                 and actor["role"] != "admin"
                 and not public
-                and (not user_paths or path.rstrip("/").endswith(("/review", "/audit")))
+                and (not user_paths or ADMIN_SUBPATH.search(path))
             ):
                 return JSONResponse({"detail": "Administrator access required"}, status_code=403)
         if (
@@ -215,6 +226,32 @@ def create_app(settings=None, adapter=None, analytics=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.middleware("http")
+    async def record_request(request: Request, call_next):
+        started = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            path = request.url.path
+            if path.startswith("/api/"):
+                route = getattr(request.scope.get("route"), "path", None) or ID_SEGMENT.sub(
+                    "/{id}", path
+                )
+                actor = getattr(request.state, "actor", None) or {}
+                try:
+                    service.store.add_request(
+                        method=request.method,
+                        route=route,
+                        status=status,
+                        duration_ms=(time.perf_counter() - started) * 1000,
+                        role=actor.get("role"),
+                    )
+                except Exception as error:  # noqa: BLE001 - metrics must never fail a request
+                    logger.debug("request metric not recorded (%s)", type(error).__name__)
 
     @app.get("/api/auth/session")
     def session(request: Request):
@@ -339,6 +376,91 @@ def create_app(settings=None, adapter=None, analytics=None):
     ):
         require_case(request, run_id)
         return service.store.audit_records(run_id, offset, limit)
+
+    @app.get("/api/investigations/{run_id}/audit/{event_id}")
+    def audit_event(request: Request, run_id: str, event_id: int):
+        """One audit event in full (a model prompt or answer); administrators only."""
+        require_case(request, run_id)
+        if request.state.actor["role"] != "admin":
+            raise HTTPException(403, "Administrator access required")
+        event = service.store.audit_event(run_id, event_id)
+        if event is None:
+            raise HTTPException(404, "Event not found")
+        return event
+
+    @app.get("/api/investigations/{run_id}/trace")
+    def run_trace(request: Request, run_id: str):
+        """Every recorded step of one investigation, with timings; administrators only."""
+        require_case(request, run_id)
+        if request.state.actor["role"] != "admin":
+            raise HTTPException(403, "Administrator access required")
+        trace = observatory.trace(run_id)
+        if trace is None:
+            raise HTTPException(404, "No trace is available for this investigation")
+        return trace
+
+    @app.get("/api/investigations/{run_id}/explanation")
+    def run_explanation(request: Request, run_id: str):
+        """How the brief was generated and evaluated, written for the caller's role."""
+        run = require_case(request, run_id)
+        admin = request.state.actor["role"] == "admin"
+        return explain_run(
+            run,
+            observatory.trace(run_id),
+            "admin" if admin else "user",
+            evaluation.status() if admin else None,
+        )
+
+    @app.get("/api/traces")
+    def traces(
+        request: Request,
+        q: str = Query("", max_length=300),
+        status: str = "",
+        offset: int = Query(0, ge=0),
+        limit: int = Query(20, ge=1, le=100),
+    ):
+        """Saved investigations with their trace figures (duration, model calls, tokens)."""
+        page = service.store.search(q=q, status=status, offset=offset, limit=limit, owner_id=None)
+        ids = [item["run_id"] for item in page["items"]]
+        overview = observatory.overview(ids)
+        facts = service.store.run_facts(ids)
+        items = []
+        for item in page["items"]:
+            traced = overview.get(item["run_id"])
+            digest = (traced or {}).get("summary") or {}
+            fact = facts.get(item["run_id"], {})
+            llm = digest.get("llm") or {}
+            items.append(
+                item
+                | {
+                    "trace_source": (traced or {}).get("source"),
+                    "started_at": digest.get("started_at"),
+                    "duration_ms": digest.get("duration_ms"),
+                    "llm_calls": llm.get("calls"),
+                    "tokens": (llm.get("tokens") or {}).get("total"),
+                    "errors": len(digest.get("errors") or []),
+                    "origin": digest.get("origin"),
+                    "mode": fact.get("mode"),
+                    "agent_mode": fact.get("agent_mode"),
+                    "validation_passed": None
+                    if fact.get("validation_passed") is None
+                    else bool(fact["validation_passed"]),
+                    "judge_status": fact.get("judge_status"),
+                    "judge_passed": None
+                    if fact.get("judge_passed") is None
+                    else bool(fact["judge_passed"]),
+                    "judge_score": fact.get("judge_score"),
+                }
+            )
+        return page | {"items": items}
+
+    @app.get("/api/observability/summary")
+    def observability_summary(
+        window: str = Query("7d", pattern="^(24h|7d|30d|all)$"),
+        origin: str = Query("all", pattern="^(all|user|evaluation)$"),
+    ):
+        """System-wide figures over a time window; administrators only (not a user path)."""
+        return observatory.summary(window, origin)
 
     @app.get("/api/investigations")
     def list_runs(

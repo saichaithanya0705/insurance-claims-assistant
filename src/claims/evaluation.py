@@ -6,6 +6,7 @@ import re
 
 from pydantic import ValidationError
 
+from claims import telemetry
 from claims.agents import Classification
 from claims.demo import DEMO_CASES
 from claims.judge import brief_contract_issues
@@ -129,9 +130,10 @@ class EvaluationService:
         outputs = []
         for demo in DEMO_CASES:
             try:
-                run = self.investigations.create(
-                    ClaimInput.model_validate(demo["claim"]), SearchFilters()
-                )
+                with telemetry.origin("evaluation"):
+                    run = self.investigations.create(
+                        ClaimInput.model_validate(demo["claim"]), SearchFilters()
+                    )
                 checked = golden_case_checks(demo, run, self.settings)
             except Exception as error:  # noqa: BLE001 - continue the suite; never expose provider errors
                 run = {"run_id": None, "status": "failed"}

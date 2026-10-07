@@ -20,7 +20,10 @@ The diagram source is [architecture.svg](architecture.svg) (a PNG render is in
 | Judge | An independent model's verdict on each live brief | `judge.py` |
 | Evaluation | Golden cases and DeepEval | `evaluation.py` |
 | Feedback | Reviewed lessons, promotion, reuse as evidence | `feedback.py`, `store.py` |
-| Store | SQLite: runs, audit log, feedback; separate connection for LangGraph checkpoints | `store.py` |
+| Store | SQLite: runs, audit log, feedback, spans, request log; separate connection for LangGraph checkpoints | `store.py` |
+| Telemetry | Spans for every stage, model call, retrieval and scoring step; reconstruction for older runs | `telemetry.py` |
+| Observability | Per-run traces and system-wide metrics from spans, reconstructed spans and the request log | `observability.py` |
+| Explain | How a saved brief was generated and evaluated, written for the caller's role | `explain.py` |
 
 ## Where each kind of knowledge lives
 
@@ -123,6 +126,21 @@ HttpOnly, revocable, expire after 12 hours and require a CSRF token for writes. 
 own runs; administrators see technical detail, accounts and model tools. Credentials stay
 server-side and never appear in responses, logs or the audit trail. Live mode never falls back to
 fixtures when a provider fails; the run fails visibly instead.
+
+## Traces and explanations
+
+Each run is a tree of spans written to SQLite as they close: a root per run, a span per workflow stage, and
+spans inside them for model calls (attempts, tokens, links to the full audit events), Synapt calls, the
+historical search (per-method ranks and points for every result), model estimates, priority scoring and the
+background independent review. Spans never hold credentials or provider messages, and recording a span can
+never fail the work it observes. Runs saved before tracing existed get a **reconstructed** trace from their
+audit events, labelled as approximate everywhere it is shown.
+
+`explain.py` turns a saved run and its trace into the account a reader needs: the stage walkthrough, the
+sources behind each statement, how comparable claims were ranked, why the priority, what the estimates rest
+on and how the brief was evaluated (deterministic validation, citation grounding, the independent review,
+the handler). No model is called to write it. The API decides what each role sees. Details:
+[OBSERVABILITY_EXPLAINABILITY.md](OBSERVABILITY_EXPLAINABILITY.md).
 
 ## Scale and limits
 

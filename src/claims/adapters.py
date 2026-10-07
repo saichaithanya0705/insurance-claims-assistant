@@ -15,6 +15,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
+from claims import telemetry
 from claims.cards import LESSON_MARKER, claim_card_text, claim_ids_in_text, is_card_chunk
 from claims.models import ClaimInput, Evidence, RetrievalBundle
 from claims.settings import Settings
@@ -202,7 +203,8 @@ class LiveSynaptAdapter:
         now = time.monotonic()
         if self._token is not None and self._token[1] > now:
             return self._token[0]
-        token = await self._authenticate()
+        with telemetry.span("synapt.login", kind="tool"):
+            token = await self._authenticate()
         lifetime = (
             min(max(self._token_lifetime - 60.0, 0.0), MAX_TOKEN_SECONDS)
             if self._token_lifetime
@@ -229,14 +231,17 @@ class LiveSynaptAdapter:
                 read_timeout_seconds=timedelta(seconds=timeout),
             ) as session,
         ):
-            await session.initialize()
+            with telemetry.span("synapt.initialize", kind="tool"):
+                await session.initialize()
             yield session
 
     async def _tools(self, session) -> list:
         tools = []
         cursor = None
         for _ in range(5):
-            page = await session.list_tools(cursor=cursor)
+            with telemetry.span("synapt.list_tools", kind="tool") as trace:
+                page = await session.list_tools(cursor=cursor)
+                trace.set(tools=len(page.tools))
             tools.extend(page.tools)
             cursor = page.nextCursor
             if cursor is None:
@@ -685,9 +690,28 @@ class LiveSynaptAdapter:
 
     async def retrieve_async(self, claim: ClaimInput) -> RetrievalBundle:
         self.live_verified = False
+        attempts_made = 0
 
         async def operation():
+            nonlocal attempts_made
+            attempts_made += 1
             async with self._session() as session:
+
+                async def call(name, arguments, purpose):
+                    # The queries are the deterministic, masking-safe ones built below; recording
+                    # them lets a reader see exactly what the knowledge store was asked.
+                    with telemetry.span(
+                        "synapt.call_tool",
+                        kind="tool",
+                        tool=name,
+                        purpose=purpose,
+                        top_k=(arguments or {}).get("top_k"),
+                        query=(arguments or {}).get("query"),
+                    ) as trace:
+                        result = await session.call_tool(name, arguments=arguments)
+                        trace.set(reported_error=bool(getattr(result, "isError", False)))
+                        return result
+
                 tools = await self._tools(session)
                 tools.sort(
                     key=lambda tool: {
@@ -717,7 +741,7 @@ class LiveSynaptAdapter:
                         continue
                     arguments = self._arguments(tool, query, self.settings.synapt_top_k + 5)
                     if arguments is not None:
-                        result = await session.call_tool(tool.name, arguments=arguments)
+                        result = await call(tool.name, arguments, "procedures")
                         evidence = self._normalize(result)
                         used.add(tool.name)
                         primary_tool = tool
@@ -748,7 +772,7 @@ class LiveSynaptAdapter:
                         warnings.append(f"Optional Synapt {name} schema is unsupported.")
                         continue
                     try:
-                        result = await session.call_tool(name, arguments=arguments)
+                        result = await call(name, arguments, "graph_enrichment")
                         evidence.extend(
                             self._normalize(result, procedures=name == "trident_get_procedures")
                         )
@@ -762,7 +786,7 @@ class LiveSynaptAdapter:
                     if len(matches) == 1:
                         arguments = self._arguments(matches[0], query)
                         if arguments is not None:
-                            result = await session.call_tool("trident_query", arguments=arguments)
+                            result = await call("trident_query", arguments, "procedures_fallback")
                             evidence.extend(self._normalize(result))
                 unique = {(e.source_id, e.text): e for e in evidence}
                 evidence = list(unique.values())
@@ -776,7 +800,7 @@ class LiveSynaptAdapter:
                     primary_tool, case_query, self.settings.synapt_case_top_k
                 )
                 try:
-                    result = await session.call_tool(primary_tool.name, arguments=case_arguments)
+                    result = await call(primary_tool.name, case_arguments, "claim_cards")
                     for chunk in self._normalize(
                         result, keep_cards=True, limit=self.settings.synapt_case_top_k
                     ):
@@ -801,7 +825,16 @@ class LiveSynaptAdapter:
                     semantic_claim_ids=semantic_ids,
                 )
 
-        bundle = await self._retry(operation)
+        with telemetry.span("synapt.retrieve", kind="tool", provider="synapt") as trace:
+            try:
+                bundle = await self._retry(operation)
+            finally:
+                trace.set(attempts=attempts_made)
+            trace.set(
+                evidence=len(bundle.evidence),
+                semantic_cards=len(bundle.semantic_claim_ids),
+                warnings=len(bundle.warnings),
+            )
         self.live_verified = bool(bundle.evidence)
         return bundle
 

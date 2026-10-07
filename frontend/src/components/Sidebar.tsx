@@ -1,17 +1,19 @@
 import { motion } from 'motion/react'
-import { Command, FilePlus2, FolderOpen, Gauge, Plug, UsersRound } from 'lucide-react'
+import { Activity, Command, Eye, FilePlus2, FolderOpen, Gauge, Plug, UsersRound } from 'lucide-react'
 import { BrandMark } from './Pipeline'
 import { cx, money, timeAgo, type RecentRun } from '../lib/format'
 
-export type View = 'workspace' | 'cases' | 'quality' | 'connection' | 'accounts'
+export type View = 'workspace' | 'cases' | 'explain' | 'observability' | 'quality' | 'connection' | 'accounts'
 
 // Shortcut numbers follow the order the items appear in, so Alt+N matches what users see.
 export const NAV: { view: View; label: string; icon: typeof FilePlus2; key: string; admin?: boolean }[] = [
   { view: 'workspace', label: 'Investigation', icon: FilePlus2, key: '1' },
   { view: 'cases', label: 'Saved cases', icon: FolderOpen, key: '2' },
-  { view: 'quality', label: 'Quality & models', icon: Gauge, key: '3', admin: true },
-  { view: 'connection', label: 'Connection', icon: Plug, key: '4', admin: true },
-  { view: 'accounts', label: 'Accounts', icon: UsersRound, key: '5', admin: true },
+  { view: 'explain', label: 'Explainability', icon: Eye, key: '3' },
+  { view: 'observability', label: 'Observability', icon: Activity, key: '4', admin: true },
+  { view: 'quality', label: 'Quality & models', icon: Gauge, key: '5', admin: true },
+  { view: 'connection', label: 'Connection', icon: Plug, key: '6', admin: true },
+  { view: 'accounts', label: 'Accounts', icon: UsersRound, key: '7', admin: true },
 ]
 
 const dotTone = (status: string) =>

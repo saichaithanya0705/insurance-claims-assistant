@@ -29,7 +29,17 @@ real 100M-row dataset, the real Synapt provider and the real NVIDIA models. Resu
 | Fraudulent-claim risk prediction | Calibrated random forest on the dataset's fraud flag; the flag rate among the closest historical claims; both feed the priority score | Precision 55.6%, recall 31.1%, PR-AUC 0.322 against 0.078. A screening signal, never a verdict |
 | Explainable analysis of characteristics and their effect on outcomes | Global permutation importance, direction of effect (partial dependence) in plain language, and a per-claim breakdown (`analytics.py`) | Tests; UI "Why this estimate"; summaries such as filing delay 1 to 13 days moves resolution 13 to 25 days |
 | Feedback loop for continuous improvement | Rate an accepted brief, administrator promotes it, it is cited as evidence in later investigations of the same claim type and ingested into Synapt (`feedback.py`, `workflow.py`) | Live: promoted lesson cited in the next brief's findings; Synapt grew 21 to 22 documents; double promotion refused |
-| Simple front-end | React and TypeScript bundle served by the same service (`frontend/`) | 16 UI tests; type-check clean; driven live in a browser |
+| Simple front-end | React and TypeScript bundle served by the same service (`frontend/`) | 35 UI tests; type-check clean; driven live in a browser |
+
+## Added after the brief: observability, traces and explainability
+
+| Need | Implementation | Evidence |
+|---|---|---|
+| A trace for every query | Spans for each stage, model call, retrieval and scoring step with timings, tokens and outcomes (`telemetry.py`, `workflow.py`, `llm.py`, `adapters.py`); a labelled reconstruction for runs saved before tracing | `tests/test_observability.py`; every run in the shipped template database reconstructs and its token total matches the audit log |
+| An observability page | Volume, latency by stage, model usage, validation and review pass rates, errors and API traffic, over a chosen window (`observability.py`, `ObservabilityView.tsx`) | Aggregation and window tests; checked live on 76 runs |
+| How the answer is generated | Stage walkthrough, the sources behind every statement, how comparable claims were ranked, why the priority, what the estimates rest on (`explain.py`, `ExplanationView.tsx`) | `tests/test_explain.py`; the Explain tab and the Explainability page |
+| How it is evaluated | Eight validation rules with per-rule results, citation grounding counts, the independent review with its pass criteria, the handler decision, and (administrators) the evaluation suite | Rule-level tests; a decision phrase fails exactly the rules that cover it |
+| Handlers see no technical detail | Model and provider names, prompts, tokens, queries and raw traces are administrator-only, enforced by the API | RBAC tests for every new endpoint; checked in a browser as a handler |
 
 ## Deliverables
 

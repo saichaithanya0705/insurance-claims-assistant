@@ -6,6 +6,7 @@ import {
   Check,
   ClipboardCopy,
   Download,
+  Eye,
   FileSearch,
   Loader2,
   GitCompare,
@@ -23,6 +24,7 @@ import { Bar, Card, CountUp, DataView, Gauge, Pill, ScoreRing, Tilt, itemVariant
 import { claimSnapshot, comparisonSnapshot, findingText, provenanceLabel, readable, sourceExcerpt, sourceTitle } from '../lib/presentation'
 import { Inspector } from './Inspector'
 import { AuditLog } from './AuditLog'
+import { ExplanationView } from './ExplanationView'
 import { Pipeline, STAGES } from './Pipeline'
 
 
@@ -76,9 +78,9 @@ export function LoadingState({ startedAt }: { startedAt?: number } = {}) {
 /* ======================================================================
    Run view
    ====================================================================== */
-type Tab = 'brief' | 'comparisons' | 'evidence' | 'trace'
+type Tab = 'brief' | 'comparisons' | 'evidence' | 'explain' | 'trace'
 
-export function RunView({ run, onDetails, onReview, admin = false }: { run: Run; onDetails: () => void; onReview: () => void; admin?: boolean }) {
+export function RunView({ run, onDetails, onReview, admin = false, onExplain, onTrace }: { run: Run; onDetails: () => void; onReview: () => void; admin?: boolean; onExplain?: () => void; onTrace?: () => void }) {
   const toast = useToast()
   const [tab, setTab] = useState<Tab>('brief')
   const [highlight, setHighlight] = useState<string | null>(null)
@@ -118,6 +120,7 @@ export function RunView({ run, onDetails, onReview, admin = false }: { run: Run;
     { key: 'brief', label: 'Brief', icon: BookOpen },
     { key: 'comparisons', label: 'Comparisons', icon: GitCompare, count: comparisons.length },
     { key: 'evidence', label: 'Evidence', icon: Layers, count: evidence.length },
+    { key: 'explain', label: 'Explain', icon: Eye },
     { key: 'trace', label: 'Activity', icon: Route },
   ]
 
@@ -213,7 +216,19 @@ export function RunView({ run, onDetails, onReview, admin = false }: { run: Run;
             {tab === 'brief' && <BriefPanel run={run} onSource={openSource} admin={admin} />}
             {tab === 'comparisons' && <ComparisonsPanel cases={comparisons} />}
             {tab === 'evidence' && <EvidencePanel evidence={evidence} highlight={highlight} run={run} />}
-            {tab === 'trace' && <TracePanel run={run} admin={admin} />}
+            {tab === 'explain' && (
+              <>
+                {onExplain && (
+                  <div className="case-tools" style={{ marginTop: 0 }}>
+                    <button className="btn sm" type="button" onClick={onExplain}>
+                      <Eye size={13} /> Open as a full page
+                    </button>
+                  </div>
+                )}
+                <ExplanationView runId={run.run_id} admin={admin} idPrefix="run-xp" onSource={openSource} onOpenTrace={onTrace ? () => onTrace() : undefined} />
+              </>
+            )}
+            {tab === 'trace' && <TracePanel run={run} admin={admin} onTrace={onTrace} />}
           </motion.div>
         </AnimatePresence>
       </Card>
@@ -827,12 +842,13 @@ function EvidencePanel({ evidence, highlight, run }: { evidence: Evidence[]; hig
 }
 
 /* ---------- Trace ---------- */
-export function TracePanel({ run, admin = false }: { run: Run; admin?: boolean }) {
+export function TracePanel({ run, admin = false, onTrace }: { run: Run; admin?: boolean; onTrace?: () => void }) {
   const trace = run.trace ?? []
   return (
     <>
       <div className="section">
         <p className="section-desc">{admin ? `${modeLabel(run.mode)} · Agents: ${label(run.agent_mode)} · ` : ''}Service urgency: {label(run.priority?.service_urgency)} · Investigation priority: {label(run.priority?.investigation_priority)}{typeof run.priority?.score === 'number' ? ` · Queue priority: ${label(run.priority.tier)} (${run.priority.score}/100)` : ''}</p>
+        {admin && onTrace && <div className="case-tools" style={{ marginTop: 0 }}><button className="btn" type="button" onClick={onTrace}>Open the full trace: timings, model calls and tokens</button></div>}
         {admin && <details className="disclose"><summary>Original findings and source metadata</summary><DataView value={{ findings: run.findings, sources: run.evidence }} /></details>}
         {admin && <AuditLog runId={run.run_id} />}
         <Pipeline states={Object.fromEntries(STAGES.map(stage => [stage.key, stage.key === 'review' ? run.review ? 'done' : ['awaiting_review', 'needs_manual_review'].includes(run.status) ? 'waiting' : 'idle' : trace.some(t => t.stage === stage.key) ? (stage.key === 'validate' && !run.validation?.passed) || (stage.key === 'judge' && run.judge?.status === 'completed' && !run.judge.passed) ? 'warn' : stage.key === 'judge' && run.judge?.status === 'pending' ? 'active' : 'done' : 'idle']))} />

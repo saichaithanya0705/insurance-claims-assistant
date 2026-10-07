@@ -5,7 +5,28 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 
+from claims.telemetry import LIGHT_ATTRIBUTES
+
 STATE_NAMES = json.loads(Path(__file__).with_name("us_states.json").read_text(encoding="utf-8"))
+
+# Aggregate views read these fields only; json_extract avoids parsing prompts and payloads in Python.
+_LIGHT_SPAN_FIELDS = ", ".join(f"json_extract(attributes, '$.{k}') AS a_{k}" for k in LIGHT_ATTRIBUTES)
+_AUDIT_FIELDS = (
+    "json_extract(body, '$.stage') AS stage, json_extract(body, '$.model') AS model, "
+    "json_extract(body, '$.role') AS role, json_extract(body, '$.attempt') AS attempt, "
+    "json_extract(body, '$.elapsed_seconds') AS elapsed_seconds, "
+    "json_extract(body, '$.usage.prompt_tokens') AS prompt_tokens, "
+    "json_extract(body, '$.usage.completion_tokens') AS completion_tokens, "
+    "json_extract(body, '$.usage.total_tokens') AS total_tokens, "
+    "json_extract(body, '$.reason') AS reason, json_extract(body, '$.decision') AS decision"
+)
+REQUEST_LOG_LIMIT = 20_000
+
+
+def _chunks(items, size=400):
+    items = list(items)
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
 
 
 
@@ -36,7 +57,19 @@ class Store:
             CREATE TABLE IF NOT EXISTS investigations(id TEXT PRIMARY KEY, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, run_id TEXT, time TEXT, kind TEXT, body TEXT);
             CREATE TABLE IF NOT EXISTS feedback(id INTEGER PRIMARY KEY, run_id TEXT, rating INTEGER, note TEXT, reviewed INTEGER, time TEXT);
+            CREATE INDEX IF NOT EXISTS audit_run ON audit(run_id);
+            CREATE TABLE IF NOT EXISTS spans(
+                id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, span_id TEXT NOT NULL, parent_id TEXT,
+                name TEXT NOT NULL, kind TEXT NOT NULL, started_at TEXT NOT NULL,
+                duration_ms REAL NOT NULL, status TEXT NOT NULL, attributes TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS spans_run ON spans(run_id);
+            CREATE INDEX IF NOT EXISTS spans_started ON spans(started_at);
+            CREATE TABLE IF NOT EXISTS api_requests(
+                id INTEGER PRIMARY KEY, time TEXT NOT NULL, method TEXT, route TEXT,
+                status INTEGER, duration_ms REAL, role TEXT);
+            CREATE INDEX IF NOT EXISTS api_requests_time ON api_requests(time);
         """)
+        self._requests_logged = 0
         self.connection.commit()
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(investigations)")}
         if "owner_id" not in columns:
@@ -184,11 +217,183 @@ class Store:
         return {"items": items, "total": total, "offset": offset, "limit": limit}
 
     def event(self, run_id, kind, body):
+        """Append an audit event and return its id, so a span can point at the full payload."""
         with self.lock, self.connection:
-            self.connection.execute(
+            return self.connection.execute(
                 "INSERT INTO audit(run_id,time,kind,body) VALUES(?,?,?,?)",
                 (run_id, datetime.now(UTC).isoformat(), kind, json.dumps(body)),
+            ).lastrowid
+
+    # ----- Traces: spans, reconstruction inputs and request metrics -----
+
+    def add_span(
+        self, *, run_id, span_id, parent_id, name, kind, started_at, duration_ms, status, attributes
+    ):
+        with self.lock, self.connection:
+            self.connection.execute(
+                "INSERT INTO spans(run_id,span_id,parent_id,name,kind,started_at,duration_ms,status,attributes)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    run_id,
+                    span_id,
+                    parent_id,
+                    name,
+                    kind,
+                    started_at,
+                    duration_ms,
+                    status,
+                    json.dumps(attributes),
+                ),
             )
+
+    def spans(self, run_id):
+        """Every recorded span of a run with its full attributes, in recording order."""
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT id,span_id,parent_id,name,kind,started_at,duration_ms,status,attributes "
+                "FROM spans WHERE run_id=? ORDER BY id",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "seq": row["id"],
+                "run_id": run_id,
+                "span_id": row["span_id"],
+                "parent_id": row["parent_id"],
+                "name": row["name"],
+                "kind": row["kind"],
+                "started_at": row["started_at"],
+                "duration_ms": row["duration_ms"],
+                "status": row["status"],
+                "attributes": json.loads(row["attributes"]),
+            }
+            for row in rows
+        ]
+
+    def light_spans(self, run_ids):
+        """Spans of several runs with only the attributes dashboards read, grouped by run."""
+        grouped = {}
+        for chunk in _chunks(run_ids):
+            marks = ",".join("?" * len(chunk))
+            with self.lock:
+                rows = self.connection.execute(
+                    "SELECT id,run_id,span_id,parent_id,name,kind,started_at,duration_ms,status,"
+                    f"{_LIGHT_SPAN_FIELDS} FROM spans WHERE run_id IN ({marks}) ORDER BY id",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                grouped.setdefault(row["run_id"], []).append(
+                    {
+                        "seq": row["id"],
+                        "run_id": row["run_id"],
+                        "span_id": row["span_id"],
+                        "parent_id": row["parent_id"],
+                        "name": row["name"],
+                        "kind": row["kind"],
+                        "started_at": row["started_at"],
+                        "duration_ms": row["duration_ms"],
+                        "status": row["status"],
+                        "attributes": {
+                            k: row[f"a_{k}"] for k in LIGHT_ATTRIBUTES if row[f"a_{k}"] is not None
+                        },
+                    }
+                )
+        return grouped
+
+    def audit_light(self, run_ids):
+        """Audit events of several runs without their (large) prompt and output bodies."""
+        grouped = {}
+        for chunk in _chunks(run_ids):
+            marks = ",".join("?" * len(chunk))
+            with self.lock:
+                rows = self.connection.execute(
+                    f"SELECT id,run_id,time,kind,{_AUDIT_FIELDS} FROM audit "
+                    f"WHERE run_id IN ({marks}) ORDER BY id",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                grouped.setdefault(row["run_id"], []).append(dict(row))
+        return grouped
+
+    def audit_event(self, run_id, event_id):
+        with self.lock:
+            row = self.connection.execute(
+                "SELECT id,time,kind,body FROM audit WHERE run_id=? AND id=?", (run_id, event_id)
+            ).fetchone()
+        return dict(row, body=json.loads(row["body"])) if row else None
+
+    def run_facts(self, run_ids):
+        """Outcome fields of saved runs, without loading their full bodies."""
+        facts = {}
+        for chunk in _chunks(run_ids):
+            marks = ",".join("?" * len(chunk))
+            with self.lock:
+                rows = self.connection.execute(
+                    "SELECT id, owner_id, json_extract(body,'$.status') AS status, "
+                    "json_extract(body,'$.mode') AS mode, json_extract(body,'$.agent_mode') AS agent_mode, "
+                    "json_extract(body,'$.validation.passed') AS validation_passed, "
+                    "json_extract(body,'$.judge.status') AS judge_status, "
+                    "json_extract(body,'$.judge.passed') AS judge_passed, "
+                    "json_extract(body,'$.judge.score') AS judge_score, "
+                    "json_extract(body,'$.priority.tier') AS tier, "
+                    "json_extract(body,'$.priority.score') AS priority_score "
+                    f"FROM investigations WHERE id IN ({marks})",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                facts[row["id"]] = dict(row)
+        return facts
+
+    def traced_runs(self, since=None):
+        """(run_id, started_at, source) for runs with native spans or only audit events."""
+        with self.lock:
+            native = self.connection.execute(
+                "SELECT run_id, started_at FROM spans WHERE parent_id IS NULL AND name='investigation'"
+                + (" AND started_at >= ?" if since else ""),
+                [since] if since else [],
+            ).fetchall()
+            legacy = self.connection.execute(
+                "SELECT run_id, MIN(time) AS first_time FROM audit WHERE kind='stage' "
+                "AND run_id IN (SELECT id FROM investigations) "
+                "AND run_id NOT IN (SELECT DISTINCT run_id FROM spans) GROUP BY run_id"
+                + (" HAVING first_time >= ?" if since else ""),
+                [since] if since else [],
+            ).fetchall()
+        return [(r["run_id"], r["started_at"], "recorded") for r in native] + [
+            (r["run_id"], r["first_time"], "reconstructed") for r in legacy
+        ]
+
+    def has_spans(self, run_id):
+        with self.lock:
+            return (
+                self.connection.execute(
+                    "SELECT 1 FROM spans WHERE run_id=? LIMIT 1", (run_id,)
+                ).fetchone()
+                is not None
+            )
+
+    def add_request(self, *, method, route, status, duration_ms, role):
+        with self.lock, self.connection:
+            self.connection.execute(
+                "INSERT INTO api_requests(time,method,route,status,duration_ms,role) VALUES(?,?,?,?,?,?)",
+                (datetime.now(UTC).isoformat(), method, route, status, round(duration_ms, 3), role),
+            )
+            self._requests_logged += 1
+            if self._requests_logged % 500 == 0:
+                self.connection.execute(
+                    "DELETE FROM api_requests WHERE id <= (SELECT MAX(id) FROM api_requests) - ?",
+                    (REQUEST_LOG_LIMIT,),
+                )
+
+    def requests_since(self, since=None):
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT time,method,route,status,duration_ms,role FROM api_requests"
+                + (" WHERE time >= ?" if since else "")
+                + " ORDER BY id",
+                [since] if since else [],
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def search_documents(self, owner_id=None):
         """Small saved-case catalog projection; no evidence, prompts or traces."""

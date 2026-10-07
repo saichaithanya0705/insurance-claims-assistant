@@ -23,6 +23,8 @@ includes the images and complete original transcript in a single file.
 | **Audited priority** | A 0 to 100 score where every point is attributed to a stated factor; a priority-ordered queue |
 | **Evaluation** | Golden cases plus DeepEval (faithfulness, relevancy, a custom safety metric) and an independent LLM judge on every live brief |
 | **Closed feedback loop** | Handler feedback, administrator promotion, then cited evidence in later investigations and ingestion into Synapt |
+| **Traces and observability** | Every query leaves a trace: each stage, model call (attempts, tokens), retrieval and scoring step, with timings. A dashboard shows volume, latency, failures and model use; older runs get a labelled, reconstructed trace |
+| **Explainability** | Per query: how the brief was generated, the sources behind each statement, how comparable claims were ranked, why the priority, what the estimates rest on, and how the brief was evaluated |
 | **Interface** | React app served by the same FastAPI service; login, user and administrator roles |
 
 ## Run it
@@ -68,6 +70,7 @@ any batch again.
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Design, data flow and decisions |
 | [SYNAPT_INTEGRATION.md](docs/SYNAPT_INTEGRATION.md) | What Synapt does here, what was measured, what to know |
 | [MODEL_CARD.md](docs/MODEL_CARD.md) | Models, splits, metrics, explanations and limits |
+| [OBSERVABILITY_EXPLAINABILITY.md](docs/OBSERVABILITY_EXPLAINABILITY.md) | Traces, the observability and explainability pages, how a brief is evaluated, and who sees what |
 | [VALIDATION.md](docs/VALIDATION.md) | Test results and live end-to-end evidence |
 | [PRESENTATION.md](docs/PRESENTATION.md) | The ten-minute panel script and slide deck |
 | [CHANGE_DECISIONS.md](docs/CHANGE_DECISIONS.md) | Why things are the way they are |

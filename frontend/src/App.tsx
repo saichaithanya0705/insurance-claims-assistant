@@ -1,9 +1,11 @@
 import { MotionConfig, motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Activity,
   ArrowLeft,
   BrainCircuit,
   ClipboardCopy,
+  Eye,
   FilePen,
   FilePlus2,
   FileText,
@@ -34,6 +36,8 @@ import { ConnectionView } from './components/ConnectionView'
 import { CaseSearch } from './components/CaseSearch'
 import { LoginGate, type User } from './components/LoginGate'
 import { AccountsView } from './components/AccountsView'
+import { ExplainabilityView } from './components/ExplainabilityView'
+import { ObservabilityView } from './components/ObservabilityView'
 
 function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => void; authEnabled: boolean }) {
   const admin = user.role === 'admin'
@@ -63,6 +67,10 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [workspaceMode, setWorkspaceMode] = useState<'draft' | 'case'>('draft')
+  const [explainRunId, setExplainRunId] = useState<string | null>(null)
+  // `n` changes on every deep link so the view remounts and opens the requested trace even when
+  // the same one was opened before.
+  const [traceTarget, setTraceTarget] = useState<{ id: string; n: number } | null>(null)
 
   const loadHealth = useCallback(async () => {
     const request = ++healthRequest.current
@@ -244,6 +252,21 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
     [busy, showRun, run?.run_id],
   )
 
+  const openExplain = useCallback((runId: string) => {
+    setExplainRunId(runId)
+    setView('explain')
+  }, [])
+
+  const openTrace = useCallback((runId: string) => {
+    setTraceTarget((current) => ({ id: runId, n: (current?.n ?? 0) + 1 }))
+    setView('observability')
+  }, [])
+
+  const navigate = useCallback((next: View) => {
+    if (next === 'observability') setTraceTarget(null)
+    setView(next)
+  }, [])
+
   const resetForm = () => {
     setWorkspaceMode('draft')
     setView('workspace')
@@ -261,24 +284,26 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((o) => !o)
-      } else if (e.altKey && ['1', '2', '3', '4', '5'].includes(e.key)) {
+      } else if (e.altKey && ['1', '2', '3', '4', '5', '6', '7'].includes(e.key)) {
         e.preventDefault()
         const item = NAV.find(n => n.key === e.key)
-        if (item && (admin || !item.admin)) setView(item.view)
+        if (item && (admin || !item.admin)) navigate(item.view)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [admin])
+  }, [admin, navigate])
 
   /* ---------- Command palette ---------- */
   const commands = useMemo<PaletteCommand[]>(() => {
     const list: PaletteCommand[] = [
       { id: 'v-ws', group: 'Navigate', label: 'Investigation workspace', hint: 'Alt 1', icon: <FilePlus2 size={15} />, run: () => setView('workspace') },
       { id: 'v-cases', group: 'Navigate', label: 'Open saved cases', hint: 'Alt 2', icon: <FolderOpen size={15} />, run: () => setView('cases') },
-      { id: 'v-q', group: 'Navigate', label: 'Quality & models', hint: 'Alt 3', icon: <Gauge size={15} />, run: () => setView('quality') },
-      { id: 'v-c', group: 'Navigate', label: 'Connection settings', hint: 'Alt 4', icon: <Plug size={15} />, run: () => setView('connection') },
-      { id: 'v-accounts', group: 'Navigate', label: 'Manage accounts', hint: 'Alt 5', icon: <UsersRound size={15} />, run: () => setView('accounts') },
+      { id: 'v-xp', group: 'Navigate', label: 'Explainability', hint: 'Alt 3', icon: <Eye size={15} />, run: () => setView('explain') },
+      { id: 'v-obs', group: 'Navigate', label: 'Observability and traces', hint: 'Alt 4', icon: <Activity size={15} />, run: () => navigate('observability') },
+      { id: 'v-q', group: 'Navigate', label: 'Quality & models', hint: 'Alt 5', icon: <Gauge size={15} />, run: () => setView('quality') },
+      { id: 'v-c', group: 'Navigate', label: 'Connection settings', hint: 'Alt 6', icon: <Plug size={15} />, run: () => setView('connection') },
+      { id: 'v-accounts', group: 'Navigate', label: 'Manage accounts', hint: 'Alt 7', icon: <UsersRound size={15} />, run: () => setView('accounts') },
       ...demoCases.map((d, i) => ({
         id: `demo-${d.id}`,
         group: 'Load demo case',
@@ -327,6 +352,22 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       },
       { id: 'a-reset', group: 'Actions', label: 'Clear intake form', icon: <RotateCcw size={15} />, run: () => (resetForm(), setView('workspace')) },
       {
+        id: 'a-explain',
+        group: 'Actions',
+        label: 'Explain the current run',
+        icon: <Eye size={15} />,
+        disabled: !run,
+        run: () => run && openExplain(run.run_id),
+      },
+      {
+        id: 'a-trace',
+        group: 'Actions',
+        label: 'Open the trace of the current run',
+        icon: <Activity size={15} />,
+        disabled: !run,
+        run: () => run && openTrace(run.run_id),
+      },
+      {
         id: 'a-copy',
         group: 'Actions',
         label: 'Copy current run ID',
@@ -335,9 +376,9 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
         run: () => run && navigator.clipboard.writeText(run.run_id).then(() => toast('Run ID copied.')),
       },
     ]
-    return admin ? list : list.filter(command => !['v-q', 'v-c', 'v-accounts', 'a-train', 'a-eval'].includes(command.id))
+    return admin ? list : list.filter(command => !['v-obs', 'v-q', 'v-c', 'v-accounts', 'a-train', 'a-eval', 'a-trace'].includes(command.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demoCases, recent, run, openRun, toast, admin])
+  }, [demoCases, recent, run, openRun, openExplain, openTrace, navigate, toast, admin])
 
   const crumb = NAV.find((n) => n.view === view)?.label
 
@@ -348,7 +389,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       </a>
       <Background />
       <div className="shell">
-        <Sidebar view={view} onView={setView} recent={recent} onOpenRecent={openRun} onPalette={() => setPaletteOpen(true)} admin={admin} />
+        <Sidebar view={view} onView={navigate} recent={recent} onOpenRecent={openRun} onPalette={() => setPaletteOpen(true)} admin={admin} />
         <main className="main" id="main-content">
           <header className="topbar">
             <div className="crumbs">
@@ -439,7 +480,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                           </motion.div>
                         ) : run ? (
                           <motion.div key={run.run_id} className="output" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                            <RunView key={run.run_id} run={run} onDetails={() => setDetailsOpen(true)} onReview={() => { if (!busy) setReviewOpen(true) }} admin={admin} />
+                            <RunView key={run.run_id} run={run} onDetails={() => setDetailsOpen(true)} onReview={() => { if (!busy) setReviewOpen(true) }} admin={admin} onExplain={() => openExplain(run.run_id)} onTrace={admin ? () => openTrace(run.run_id) : undefined} />
                           </motion.div>
                         ) : null                        }
                       </div>
@@ -450,6 +491,8 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                 </motion.section>
               )}
               {view === 'cases' && <motion.section key="cases" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}><div className="page-head"><div><div className="eyebrow">Case queue</div><h1 className="display" tabIndex={-1}>Saved cases</h1><p className="subtitle">Open a brief, or sort by priority to work the queue.</p></div><button className="btn primary" disabled={busy} onClick={resetForm}><FilePlus2 size={15} /> New investigation</button></div><CaseLibrary onOpen={openRun} busy={busy} /></motion.section>}
+              {view === 'explain' && <ExplainabilityView admin={admin} runId={explainRunId} onSelect={setExplainRunId} onOpenTrace={openTrace} />}
+              {admin && view === 'observability' && <ObservabilityView key={traceTarget?.n ?? 0} focusRun={traceTarget?.id ?? null} onExplain={openExplain} />}
               {admin && view === 'accounts' && <AccountsView />}
               {admin && view === 'quality' && (
                 <motion.div key="quality" exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }}>

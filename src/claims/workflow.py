@@ -3,6 +3,7 @@ import logging
 import re
 import sqlite3
 import threading
+from collections import Counter
 from copy import deepcopy
 from typing import TypedDict
 from uuid import uuid4
@@ -11,6 +12,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
+from claims import telemetry
 from claims.agents import Agents
 from claims.cards import claim_ids_in_text
 from claims.feedback import lesson_document, lesson_evidence
@@ -79,28 +81,81 @@ class InvestigationState(TypedDict, total=False):
     error: str
 
 
+VALIDATION_CHECKS = {
+    "evidence_retrieved": (
+        "External evidence retrieved",
+        "At least one source beyond the submitted claim itself was retrieved.",
+    ),
+    "findings_cited": (
+        "Findings cite a source",
+        "Every finding that is not a stated limitation names at least one supporting source.",
+    ),
+    "citations_resolve": (
+        "Finding citations resolve",
+        "Every source a finding cites exists in the evidence supplied for this brief.",
+    ),
+    "document_claims": (
+        "No unverified document-receipt claims",
+        "Facts never say a document was provided, received or reviewed; only names are reported.",
+    ),
+    "recommendations_cited": (
+        "Recommendations are cited",
+        "Every recommendation cites at least one source, and every cited source exists.",
+    ),
+    "action_boundary": (
+        "Actions stay inside the handler boundary",
+        "No recommended action approves, denies, rejects or pays a claim, or alleges proven fraud.",
+    ),
+    "text_boundary": (
+        "Generated text stays inside the decision boundary",
+        "No finding or recommendation text decides a claim or alleges proven fraud.",
+    ),
+    "classification_confident": (
+        "Claim category is confident",
+        "The claim category did not need manual review.",
+    ),
+}
+
+
 def validate_brief(state):
     ids = {e["source_id"] for e in state["evidence"]}
     issues = []
+    # Per-check tallies describe the same decisions the issue list records, one row per rule.
+    tally = {key: {"inspected": 0, "failed": 0} for key in VALIDATION_CHECKS}
+
+    def fail(check, message):
+        issues.append(message)
+        tally[check]["failed"] += 1
+
+    tally["evidence_retrieved"]["inspected"] += 1
     if ids <= {"claim:input"}:
-        issues.append("No external evidence was retrieved; manual investigation required.")
+        fail("evidence_retrieved", "No external evidence was retrieved; manual investigation required.")
     for finding in state["findings"]:
-        if finding["kind"] != "limitation" and not finding["source_ids"]:
-            issues.append("A substantive finding has no citation.")
+        if finding["kind"] != "limitation":
+            tally["findings_cited"]["inspected"] += 1
+            if not finding["source_ids"]:
+                fail("findings_cited", "A substantive finding has no citation.")
+        if finding["source_ids"]:
+            tally["citations_resolve"]["inspected"] += 1
         if any(source not in ids for source in finding["source_ids"]):
-            issues.append("A finding cites an unknown source.")
+            fail("citations_resolve", "A finding cites an unknown source.")
         # Intake contains document names, never uploaded document content. Catch
         # explicit received-content claims deterministically rather than relying
         # only on the model's availability instruction.
-        if finding["kind"] == "fact" and asserts_document_receipt(finding["text"]):
-            issues.append(
-                "Document names describe reported availability only; document content was not received or reviewed."
-            )
+        if finding["kind"] == "fact":
+            tally["document_claims"]["inspected"] += 1
+            if asserts_document_receipt(finding["text"]):
+                fail(
+                    "document_claims",
+                    "Document names describe reported availability only; document content was not received or reviewed.",
+                )
     for recommendation in state["recommendations"]:
+        tally["recommendations_cited"]["inspected"] += 1
+        tally["action_boundary"]["inspected"] += 1
         if not recommendation["source_ids"] or any(
             source not in ids for source in recommendation["source_ids"]
         ):
-            issues.append("A recommendation has missing or unknown citations.")
+            fail("recommendations_cited", "A recommendation has missing or unknown citations.")
         words = recommendation["action"].lower()
         if any(
             term in words
@@ -112,9 +167,10 @@ def validate_brief(state):
                 "proven fraud",
             )
         ):
-            issues.append("A recommendation crosses the handler decision boundary.")
+            fail("action_boundary", "A recommendation crosses the handler decision boundary.")
+    tally["classification_confident"]["inspected"] += 1
     if state["classification"]["needs_review"]:
-        issues.append("Claim classification needs manual review.")
+        fail("classification_confident", "Claim classification needs manual review.")
     # Mechanical checks catch explicit boundary crossings in every generated field;
     # they do not establish semantic truth or replace handler review.
     generated_texts = [f["text"] for f in state["findings"]] + [
@@ -122,6 +178,7 @@ def validate_brief(state):
     ]
     unsafe = r"\b(?:approve|deny|reject)\s+(?:the\s+)?claim\b|\bsend\s+(?:the\s+)?payment\b|\bproven\s+fraud\b"
     for text in generated_texts:
+        tally["text_boundary"]["inspected"] += 1
         # Common explicit prohibitions are valid discussion of the boundary.
         text = re.sub(
             r"\b(?:do not|never|cannot|must not|does not)\s+(?:approve|deny|reject)\s+(?:the\s+)?claim\b",
@@ -130,11 +187,22 @@ def validate_brief(state):
         )
         text = re.sub(r"\b(?:not|no)\s+proven\s+fraud\b", "", text)
         if re.search(unsafe, text):
-            issues.append("Generated text crosses the handler decision boundary.")
+            fail("text_boundary", "Generated text crosses the handler decision boundary.")
     return {
         "passed": not issues,
         "issues": list(dict.fromkeys(issues)),
         "scope": "schema, citation membership and action boundaries; not a semantic truth guarantee",
+        "checks": [
+            {
+                "id": key,
+                "label": VALIDATION_CHECKS[key][0],
+                "description": VALIDATION_CHECKS[key][1],
+                "passed": counts["failed"] == 0,
+                "inspected": counts["inspected"],
+                "failed": counts["failed"],
+            }
+            for key, counts in tally.items()
+        ],
     }
 
 
@@ -152,6 +220,7 @@ class InvestigationService:
         )
         self.lock = threading.RLock()
         self.judge_threads: list[threading.Thread] = []
+        self.tracer = telemetry.Tracer(self.store)
         graph = StateGraph(InvestigationState)
         for name, action in (
             ("classify", self.classify),
@@ -163,7 +232,7 @@ class InvestigationService:
             ("judge", self.judge),
             ("review", self.review),
         ):
-            graph.add_node(name, action)
+            graph.add_node(name, self._traced(name, action))
         graph.add_edge(START, "classify")
         graph.add_edge("classify", "retrieve")
         graph.add_edge("retrieve", "investigate")
@@ -180,6 +249,78 @@ class InvestigationService:
         )
         self.graph = graph.compile(checkpointer=SqliteSaver(self.checkpoint_connection))
 
+    def _traced(self, name, action):
+        """Run a workflow node inside a stage span that records how it went and what it produced."""
+
+        def run_stage(state):
+            with self.tracer.stage(state["run_id"], name) as span:
+                result = action(state)
+                try:
+                    span.set(**self._stage_attributes(name, state, result))
+                except (KeyError, TypeError, AttributeError):  # attributes are descriptive only
+                    pass
+                return result
+
+        run_stage.__name__ = f"traced_{name}"
+        return run_stage
+
+    def _stage_attributes(self, name, state, out):
+        method = "model" if self.settings.agent_mode == "live" else "rules"
+
+        def count(items, key):
+            return dict(Counter(item.get(key) for item in items))
+
+        if name == "classify":
+            result = out["classification"]
+            return {
+                "method": result.get("method"),
+                "claim_type": result.get("claim_type"),
+                "needs_review": result.get("needs_review"),
+            }
+        if name == "retrieve":
+            return {
+                "evidence": len(out["evidence"]),
+                "evidence_by_provenance": count(out["evidence"], "provenance"),
+                "similar_cases": len(out["similar_cases"]),
+                "semantic": dict(self.retriever.last_search),
+                "filters": state.get("filters"),
+            }
+        if name == "investigate":
+            new = out["findings"][len(state.get("findings", [])) :]
+            return {"method": method, "findings": len(new), "by_kind": count(new, "kind")}
+        if name == "risk":
+            priority, predictions = out["priority"], out["predictions"]
+            return {
+                "priority_score": priority["score"],
+                "priority_tier": priority["tier"],
+                "factors": len(priority["components"]),
+                "predictions_available": bool(predictions.get("available")),
+                "fraud_review_signal": (predictions.get("fraud") or {}).get("review_signal"),
+            }
+        if name == "recommend":
+            return {
+                "method": method,
+                "recommendations": len(out["recommendations"]),
+                "actions": [r["action"] for r in out["recommendations"]],
+            }
+        if name == "validate":
+            validation = out["validation"]
+            return {
+                "passed": validation["passed"],
+                "issues": validation["issues"],
+                "checks": validation.get("checks", []),
+            }
+        if name == "judge":
+            verdict = out["judge"]
+            return {
+                "status": verdict.get("status"),
+                "model": verdict.get("model"),
+                "independent": verdict.get("independent"),
+            }
+        if name == "review" and out.get("review"):
+            return {"decision": out["review"]["decision"]}
+        return {}
+
     def trace(self, state, stage, detail):
         item = {"stage": stage, "status": "complete", "detail": detail}
         self.store.event(state["run_id"], "stage", item)
@@ -194,7 +335,17 @@ class InvestigationService:
         )
 
     def retrieve_context(self, claim, filters):
-        bundle = self.adapter.retrieve(claim)
+        with telemetry.span(
+            "knowledge.retrieve",
+            kind="tool",
+            adapter="live" if self.settings.synapt_mode == "live" else "fixture",
+        ) as trace:
+            bundle = self.adapter.retrieve(claim)
+            trace.set(
+                evidence=len(bundle.evidence),
+                semantic_cards=len(bundle.semantic_claim_ids),
+                warnings=list(bundle.warnings),
+            )
         evidence = [e.model_dump(mode="json") for e in bundle.evidence]
         evidence.append(
             {
@@ -218,9 +369,16 @@ class InvestigationService:
                 ]
             )
         )
-        similar = self.retriever.search(
-            claim, filters, self.settings.synapt_top_k, semantic_ids
-        )
+        with telemetry.span("history.search", kind="retrieval") as trace:
+            similar = self.retriever.search(
+                claim, filters, self.settings.synapt_top_k, semantic_ids
+            )
+            trace.set(
+                semantic_ids_supplied=len(semantic_ids),
+                results=len(similar),
+                **self.retriever.last_search,
+                **self.retriever.last_trace,
+            )
         for case in similar:
             evidence.append(
                 {
@@ -234,7 +392,11 @@ class InvestigationService:
                 }
             )
         # Reviewed handler lessons an administrator promoted: the feedback loop's return path.
-        lessons = self.store.promoted_lessons(claim.claim_type.value if claim.claim_type else None)
+        with telemetry.span("feedback.lessons", kind="retrieval") as trace:
+            lessons = self.store.promoted_lessons(
+                claim.claim_type.value if claim.claim_type else None
+            )
+            trace.set(applied=len(lessons), lesson_ids=[lesson["id"] for lesson in lessons])
         for lesson in lessons:
             evidence.append(lesson_evidence(lesson).model_dump(mode="json"))
         return {
@@ -281,14 +443,25 @@ class InvestigationService:
 
     def risk(self, state):
         claim = ClaimInput.model_validate(state["claim"])
-        predictions = self.analytics.predict(claim)
-        priority = score_priority(
-            claim,
-            state["findings"],
-            predictions,
-            state.get("similar_cases", []),
-            state["classification"],
-        )
+        with telemetry.span("models.predict", kind="compute") as trace:
+            predictions = self.analytics.predict(claim)
+            trace.set(
+                available=bool(predictions.get("available")),
+                tasks=[
+                    task
+                    for task in ("amount", "resolution", "fraud")
+                    if (predictions.get(task) or {}).get("available")
+                ],
+            )
+        with telemetry.span("priority.score", kind="compute") as trace:
+            priority = score_priority(
+                claim,
+                state["findings"],
+                predictions,
+                state.get("similar_cases", []),
+                state["classification"],
+            )
+            trace.set(score=priority["score"], tier=priority["tier"])
         return {"priority": priority, "predictions": predictions} | self.trace(
             state,
             "risk",
@@ -324,7 +497,7 @@ class InvestigationService:
             }
             thread = threading.Thread(
                 target=self._judge_in_background,
-                args=(state["run_id"], snapshot),
+                args=(state["run_id"], snapshot, telemetry.current()),
                 name="judge-" + state["run_id"][:8],
                 daemon=True,
             )
@@ -336,14 +509,27 @@ class InvestigationService:
         }[verdict["status"]]
         return {"judge": verdict} | self.trace(state, "judge", detail)
 
-    def _judge_in_background(self, run_id, snapshot):
-        try:
-            verdict = self.judge_agent.evaluate(snapshot, run_id)
-        except Exception:  # noqa: BLE001 - the judge is advisory and must never raise into a thread
-            verdict = self.judge_agent.pending() | {
-                "status": "failed",
-                "reason": "Judge request failed; brief not judged.",
-            }
+    def _judge_in_background(self, run_id, snapshot, trace_context=None):
+        # Threads start with an empty context, so the stage span is handed over explicitly.
+        with (
+            telemetry.attach(trace_context),
+            telemetry.span("judge.review", kind="evaluation", background=True) as trace,
+        ):
+            try:
+                verdict = self.judge_agent.evaluate(snapshot, run_id)
+            except Exception as error:  # noqa: BLE001 - the judge is advisory and must never raise into a thread
+                trace.fail(error)
+                verdict = self.judge_agent.pending() | {
+                    "status": "failed",
+                    "reason": "Judge request failed; brief not judged.",
+                }
+            trace.set(
+                status=verdict.get("status"),
+                passed=verdict.get("passed"),
+                score=verdict.get("score"),
+                model=verdict.get("model"),
+                independent=verdict.get("independent"),
+            )
         try:
             self.store.event(
                 run_id,
@@ -389,25 +575,38 @@ class InvestigationService:
         }
         with self.lock:
             self.store.save(run_id, state)
-            try:
-                result = self.graph.invoke(state, {"configurable": {"thread_id": run_id}})
-                result.pop("__interrupt__", None)
-            except Exception as exc:  # noqa: BLE001 - keep unknown adapter errors out of API responses
-                result = dict(self.graph.get_state({"configurable": {"thread_id": run_id}}).values)
-                result.update(
-                    {
-                        "status": "failed",
-                        "error": "Investigation failed safely. Check integration configuration or validated model output; no fallback was used.",
-                    }
-                )
-                self.store.event(
-                    run_id,
-                    "failure",
-                    {
-                        "reason": "adapter_model_or_workflow_failure",
-                        "error_type": type(exc).__name__,
-                    },
-                )
+            with self.tracer.run(
+                run_id,
+                "investigation",
+                origin=telemetry.current_origin(),
+                mode=state["mode"],
+                agent_mode=state["agent_mode"],
+                judge_mode=self.settings.judge_mode,
+                claim_type=claim.claim_type.value if claim.claim_type else None,
+            ) as root:
+                try:
+                    result = self.graph.invoke(state, {"configurable": {"thread_id": run_id}})
+                    result.pop("__interrupt__", None)
+                except Exception as exc:  # noqa: BLE001 - keep unknown adapter errors out of API responses
+                    root.fail(exc)
+                    result = dict(
+                        self.graph.get_state({"configurable": {"thread_id": run_id}}).values
+                    )
+                    result.update(
+                        {
+                            "status": "failed",
+                            "error": "Investigation failed safely. Check integration configuration or validated model output; no fallback was used.",
+                        }
+                    )
+                    self.store.event(
+                        run_id,
+                        "failure",
+                        {
+                            "reason": "adapter_model_or_workflow_failure",
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                root.set(outcome=result.get("status"))
             self.store.save(run_id, result)
             return result
 
@@ -422,9 +621,11 @@ class InvestigationService:
                 raise ValueError(
                     "Brief validation failed. Request revision; acceptance is blocked."
                 )
-            result = self.graph.invoke(
-                Command(resume=decision.model_dump()), {"configurable": {"thread_id": run_id}}
-            )
+            with self.tracer.run(run_id, "handler_review", decision=decision.decision) as root:
+                result = self.graph.invoke(
+                    Command(resume=decision.model_dump()), {"configurable": {"thread_id": run_id}}
+                )
+                root.set(outcome=result.get("status"))
             result.pop("__interrupt__", None)
             self.store.save(run_id, result)
             self.store.event(run_id, "handler_review", decision.model_dump())
