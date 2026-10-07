@@ -437,3 +437,33 @@ reduced-motion users get a static surface.
 ## Why not the alternative
 A dark sidebar or dark theme was considered and rejected as less formal for a claims tool.
 A component-library migration would add risk without fixing the identified defects.
+
+
+# Synapt store verification moved to the graph, and into Git — 2026-10-07
+
+## What I did
+Added `claims.synapt_inventory`, `scripts/verify_synapt_store.py` and the committed
+`data/synapt/expected_inventory.json`. The check reads each document's chunk count and character span from
+Synapt's graph, identifies expansion documents by the marker in their header chunk (tolerating Synapt's
+masking of a 9-digit run as `[US_SSN_…]`) and base documents by size, and compares both with the local
+batch. `bootstrap.py check` and `ingest_expanded_cards.py --verify-only` now use it; the latter records
+graph-verified batches in the local ledger. Live result: 10/10 base batches, 40/40 expansion batches
+(19,887 cards), 5/5 procedures, 63 documents, 20,914 chunks.
+
+## Why this approach
+The old reconciliation asked for `chunks + 100` chunks in one query. The tenant returns at most 1,923 per
+query and fails a `top_k` near 21,000, so the script crashed and the ledger kept saying "500 of 19,887
+verified" although the data was complete. By the old check's own arithmetic (500 of 19,887 cards verified,
+19,387 pending) it would have reported NOT READY on this machine; that was worked out from its code and the
+ledger, not observed, because the ledger has since been updated. The ledger also lives in `artifacts/`, outside Git, so a second laptop could not see it. The graph
+gives exact counts, and a committed inventory gives every machine the same expectation.
+
+## Why not the alternative
+Sampling cards by their own text was tried first and discarded: it hit only about a third of cards, base
+cards that were already known to be present included, so a miss proved nothing. Uploading again to "make
+sure" would have created permanent duplicates, because the tenant exposes no deletion tool.
+
+## Known limit
+The uploader's post-submit retrieval check (`verify_batch`) still cannot confirm a batch at this store
+size. This provider is complete, so it is documented rather than rewritten; new corpora belong in a new
+provider with their own inventory.

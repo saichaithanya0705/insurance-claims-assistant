@@ -14,7 +14,6 @@ only on request, and Synapt batches already uploaded are skipped (ledger).
 
 import argparse
 import hashlib
-import json
 import subprocess
 import sys
 import time
@@ -194,36 +193,26 @@ def step_check(settings: Settings, args) -> bool:
         import asyncio
 
         from claims.adapters import LiveSynaptAdapter
+        from claims.synapt_inventory import (
+            INVENTORY_PATH,
+            load_expected,
+            summary_lines,
+            verify_store,
+        )
 
         async def probe():
+            # Compares the live provider with the committed inventory, so every machine gets the same
+            # answer without a local upload ledger (artifacts/ is not in Git).
             adapter = LiveSynaptAdapter(settings)
-            stats = await adapter.call_read_tool("trident_get_stats", {"provider_id": settings.synapt_provider_id})
-            return json.loads(stats["result"]) if isinstance(stats.get("result"), str) else stats
+            return await verify_store(adapter, settings.synapt_provider_id, load_expected(ROOT / INVENTORY_PATH))
 
         try:
-            stats = asyncio.run(probe())
-            ledger = CORPUS / "ledger.jsonl"
-            say("ok", f"Synapt provider {settings.synapt_provider_id}: {stats['doc_count']} documents, "
-                f"{stats['chunks']} chunks; corpus batches uploaded: "
-                f"{sum(1 for _ in ledger.open()) if ledger.exists() else 0}")
-            for expansion in sorted((ROOT / "artifacts" / "synapt").glob("corpus-*/upload-ledger.jsonl")):
-                manifest_path = expansion.parent / "manifest.json"
-                if not manifest_path.exists():
-                    continue
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                states = {}
-                for line in expansion.read_text(encoding="utf-8").splitlines():
-                    entry = json.loads(line)
-                    if entry["provider"] != settings.synapt_provider_id:
-                        raise ValueError("Expansion ledger belongs to a different provider")
-                    states[entry["path"]] = entry["status"]
-                verified = sum(b["cards"] for b in manifest["batches"]
-                               if states.get(b["path"]) == "verified")
-                pending = manifest["cards"] - verified
-                say("ok" if not pending else "..",
-                    f"{expansion.parent.name}: {verified:,}/{manifest['cards']:,} cards verified; "
-                    f"{pending:,} pending verification (submitted does not mean searchable)")
-                ready &= not pending
+            report = asyncio.run(probe())
+            say("ok", f"Synapt provider {settings.synapt_provider_id} reachable; verified against "
+                f"data/synapt/expected_inventory.json")
+            for mark, text in summary_lines(report):
+                say(mark, text)
+            ready &= report["ok"]
         except Exception as exc:  # noqa: BLE001 - any failure is a readiness problem to report
             say("XX", f"Synapt not reachable ({type(exc).__name__}); check .env credentials")
             ready = False

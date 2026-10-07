@@ -2,6 +2,12 @@
 
 Ambiguous writes are retained as unknown and reconciled by retrieving content; never
 automatically resubmit a timed-out write. Provider count growth alone is not completion.
+
+`--verify-only` checks every batch from Synapt's graph (document sizes and text spans, see
+claims.synapt_inventory) against data/synapt/expected_inventory.json and records the result in the
+local ledger. The retrieval check used while uploading (`verify_batch`) cannot confirm a batch once the
+store holds more than a few thousand chunks, because the tenant returns at most ~1,900 chunks per query
+and rejects a larger `top_k`. This provider is fully populated, so do not upload again.
 """
 
 import argparse
@@ -13,10 +19,12 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 from claims.adapters import LiveSynaptAdapter, SynaptError
 from claims.cards import claim_alias, claim_ids_in_text
 from claims.settings import Settings
+from claims.synapt_inventory import INVENTORY_PATH, load_expected, summary_lines, verify_store
 
 
 def unwrap(payload):
@@ -63,40 +71,28 @@ async def verify_batch(adapter, provider, batch):
             "verified": len(found) == len(wanted)}
 
 
-async def reconcile(adapter, provider, selected, ledger, states, targeted=False):
-    """One bounded inventory verifies exact IDs across all previously tracked batches."""
-    stats = await provider_stats(adapter, provider)
-    payload = unwrap(await adapter.call_read_tool("trident_get_chunks", {
-        "provider_id": provider, "query": "Historical claim card",
-        "top_k": min(30000, stats.get("chunks", 0) + 100),
-    }, max_response_chars=20_000_000))
-    chunks = payload if isinstance(payload, list) else payload.get("chunks", [])
-    returned = {cid for c in chunks for cid in claim_ids_in_text(c.get("text", ""))}
-    summary = []
+async def reconcile(adapter, provider, selected, ledger, states):
+    """Verify every tracked batch from Synapt's graph and record the outcome in the local ledger."""
+    expected = load_expected(ROOT / INVENTORY_PATH)
+    report = await verify_store(adapter, provider, expected)
+    inventory_sha = {b["name"]: b["sha256"] for b in expected["expansion"]["batches"]}
+    results = {b["name"]: b for b in report["expansion"]["batches"]}
     for batch in selected:
-        previous = states.get(batch["path"])
-        if not previous:
+        name = Path(batch["path"]).name
+        previous, result = states.get(batch["path"]), results.get(name)
+        if not previous or result is None:
             continue
         if previous["sha256"] != batch["sha256"]:
             raise ValueError("Tracked batch differs from manifest")
-        wanted = set(batch["claim_ids"])
-        found = wanted & returned
-        result = {"readable_cards": len(found), "expected_cards": len(wanted),
-                  "verified": found == wanted}
-        if targeted and previous["status"] != "verified" and not result["verified"]:
-            result = await verify_batch(adapter, provider, batch)
-        if result["verified"] and previous["status"] != "verified":
-            record(ledger, {"provider": provider, "path": batch["path"],
-                            "sha256": batch["sha256"], "status": "verified",
-                            "verification": result, "stats": stats})
-        summary.append({"path": batch["path"], "status": "verified" if result["verified"]
-                        else previous["status"], "previous_verification": previous.get("verification"),
-                        "current_inventory": result})
-    report = {"stats": stats, "returned_chunks": len(chunks),
-              "inventory_complete_by_chunk_count": len(chunks) == stats.get("chunks"),
-              "batches": summary}
+        if inventory_sha.get(name) != batch["sha256"]:
+            continue  # the committed inventory describes a different build of this batch
+        if result["status"] == "verified" and previous["status"] != "verified":
+            record(ledger, {"provider": provider, "path": batch["path"], "sha256": batch["sha256"],
+                            "status": "verified", "verification": {"method": "graph", **result},
+                            "stats": report["stats"]})
     (ledger.parent / "reconciliation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps(report, indent=2), flush=True)
+    for mark, text in summary_lines(report):
+        print(f"  [{mark}] {text}", flush=True)
 
 
 async def main(args):
@@ -110,7 +106,7 @@ async def main(args):
     states = ledger_states(ledger, provider)
     selected = manifest["batches"][:args.max_batches or None]
     if args.verify_only:
-        await reconcile(adapter, provider, selected, ledger, states, args.targeted)
+        await reconcile(adapter, provider, selected, ledger, states)
         return
     for batch in selected:
         identity = {"provider": provider, "path": batch["path"], "sha256": batch["sha256"]}
@@ -181,6 +177,6 @@ if __name__ == "__main__":
     parser.add_argument("--submit-only", action="store_true",
                         help="Queue each batch once; a separate run verifies extraction")
     parser.add_argument("--verify-only", action="store_true", help="Reconcile all tracked batches without writes")
-    parser.add_argument("--targeted", action="store_true", help="Verify each pending batch by marker and full ID set")
+    parser.add_argument("--targeted", action="store_true", help="Deprecated: graph verification is always exact")
     parser.add_argument("--retry-rejected", action="store_true", help="Explicitly retry only confirmed rejected writes")
     asyncio.run(main(parser.parse_args()))

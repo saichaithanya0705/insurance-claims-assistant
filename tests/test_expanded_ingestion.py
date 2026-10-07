@@ -53,18 +53,67 @@ def test_tracked_or_uncertain_write_is_never_automatically_repeated(upload_case,
     assert "INGEST" not in calls
 
 
-def test_verify_only_does_not_upload_or_downgrade_prior_verification(upload_case):
+class GraphProvider:
+    """A provider holding one document for the single test batch, as Synapt's graph would report it."""
+
+    def __init__(self, calls, chunks=1):
+        self.calls, self.chunks = calls, chunks
+
+    async def call_read_tool(self, name, arguments, **kwargs):
+        self.calls.append(name)
+        if name == "trident_get_stats":
+            return {"doc_count": 1, "chunks": self.chunks}
+        if name == "trident_cypher":
+            row = {"f": "doc.txt", "n": self.chunks, "linked": self.chunks, "lo": 0, "hi": 17 + 1094}
+            return {"result": json.dumps([row])}
+        return {"result": json.dumps([{"source_file": "doc.txt",
+                                       "text": "### Historical claim cards; corpus batch test"}])}
+
+
+@pytest.fixture
+def graph_case(upload_case, monkeypatch):
     args, calls, identity = upload_case
+    inventory = {"base": {"batches": []}, "procedures": [], "expansion": {"batches": [
+        {"name": "cards.txt", "cards": 1, "chars": 17, "marker": "test", "sha256": identity["sha256"]}]}}
+    monkeypatch.setattr(uploader, "load_expected", lambda path: inventory)
+    args.verify_only = True
+    return args, calls, identity, inventory
+
+
+def test_verify_only_does_not_upload_or_downgrade_prior_verification(graph_case, monkeypatch):
+    args, calls, identity, _ = graph_case
     ledger = args.corpus / "upload-ledger.jsonl"
     uploader.record(ledger, identity | {"status": "verified", "verification": {"verified": True}})
     before = ledger.read_bytes()
-    args.verify_only = True
+    # The store now lacks the card (zero chunks): the report says so, the ledger is left alone.
+    monkeypatch.setattr(uploader, "LiveSynaptAdapter", lambda settings: GraphProvider(calls, chunks=0))
     asyncio.run(uploader.main(args))
     assert "INGEST" not in calls
     assert ledger.read_bytes() == before
     result = json.loads((args.corpus / "reconciliation.json").read_text())
-    assert result["batches"][0]["status"] == "verified"
-    assert result["batches"][0]["current_inventory"]["verified"] is False
+    assert result["expansion"]["batches"][0]["status"] == "failed"
+    assert not result["ok"]
+
+
+def test_verify_only_records_graph_verification_for_a_submitted_batch(graph_case, monkeypatch):
+    args, calls, identity, _ = graph_case
+    ledger = args.corpus / "upload-ledger.jsonl"
+    uploader.record(ledger, identity | {"status": "submitted"})
+    monkeypatch.setattr(uploader, "LiveSynaptAdapter", lambda settings: GraphProvider(calls))
+    asyncio.run(uploader.main(args))
+    assert "INGEST" not in calls
+    entry = uploader.ledger_states(ledger, "test-provider")["cards.txt"]
+    assert entry["status"] == "verified" and entry["verification"]["method"] == "graph"
+
+
+def test_verify_only_ignores_an_inventory_for_a_different_build_of_the_batch(graph_case, monkeypatch):
+    args, calls, identity, inventory = graph_case
+    inventory["expansion"]["batches"][0]["sha256"] = "0" * 64
+    ledger = args.corpus / "upload-ledger.jsonl"
+    uploader.record(ledger, identity | {"status": "submitted"})
+    monkeypatch.setattr(uploader, "LiveSynaptAdapter", lambda settings: GraphProvider(calls))
+    asyncio.run(uploader.main(args))
+    assert uploader.ledger_states(ledger, "test-provider")["cards.txt"]["status"] == "submitted"
 
 
 def test_confirmed_rejection_requires_explicit_retry_and_records_new_submission(upload_case):

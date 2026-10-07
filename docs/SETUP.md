@@ -77,15 +77,21 @@ Re-running is safe: a verified download is reused, and models are retrained only
 ## 4. Synapt provider
 
 The cards live in Synapt's cloud, not on your machine. The provider `synapt_final_capstone`
-already holds the 1,000 claim cards and the 5 procedures, so on a second computer you do **not**
+already holds the 5 procedures, the 1,000 base claim cards and 19,887 expansion cards (63 documents,
+20,914 chunks), so on a second computer you do **not**
 upload anything. Confirm that it is reachable and populated:
 
 ```powershell
+uv run python scripts/verify_synapt_store.py
 uv run python scripts/synapt_ingest.py status
 uv run python scripts/synapt_ingest.py verify --sample 20
 ```
 
-`status` prints document and chunk counts. `verify` asks Synapt for cards similar to 20 sampled
+`verify_synapt_store.py` is the authoritative check (and what `bootstrap.py check` runs): it reads
+document sizes from Synapt's graph and compares them with the committed
+`data/synapt/expected_inventory.json`, so it gives the same answer on every machine. Expect
+`base corpus: 10/10`, `expansion corpus: 40/40` and `procedures: 5/5`. `status` prints document and
+chunk counts. `verify` asks Synapt for cards similar to 20 sampled
 claims and reports how often the returned cards share the claim's type, state, amount band and
 history, next to the rate expected by chance.
 
@@ -187,13 +193,14 @@ For the 7 October corpus and training refresh, see [data expansion](DATA_EXPANSI
 [ML verification](ML_RETRAINING_2026-10-07.md), and [evaluation audit](EVAL_AUDIT_2026-10-07.md).
 The expanded `claim_cards.parquet` is a validated local artifact. This provider extracts its schema,
 so use the paired `cards/expanded-*.txt` for semantic ingestion. All 40 batches have already been
-submitted through MCP; do not also upload them in the browser. Inspect the ledger and reconcile:
+submitted through MCP and verified (40 of 40, see step 4); do not upload them again. To re-check:
 
 ```powershell
-uv run python scripts/ingest_expanded_cards.py --verify-only --targeted
+uv run python scripts/verify_synapt_store.py
 ```
 
-This command makes no provider writes. A partial retrieval inventory cannot establish that a missing
+This command makes no provider writes and is exact (it reads document sizes from Synapt's graph).
+A partial retrieval inventory cannot establish that a missing
 card was never ingested. The script never automatically repeats an uncertain write; a retry of an
 explicit rejection requires `--retry-rejected`. Restart a running API after retraining to load the new
 model artifact and backend changes.

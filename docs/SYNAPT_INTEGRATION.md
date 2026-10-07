@@ -10,6 +10,7 @@ what to know before changing it. Commands are in [SETUP.md](SETUP.md). The wire-
 |---|---|
 | 5 hand-authored handling procedures (SOPs) | Cited as evidence in findings and recommendations |
 | 1,000 historical claim cards, one card per chunk | Semantic ranking of similar claims |
+| 19,887 more historical cards (expansion, optional) | The same ranking over a wider pool; the application also works with only the base 1,000 |
 | Reviewed handler lessons, ingested when an administrator promotes one | Shared knowledge; also reused locally as cited evidence |
 
 It does **not** hold the 100 million claims. The Parquet file does, and it is the authority for every
@@ -28,17 +29,28 @@ Parquet file under the handler's filters.
 
 ## What is in the provider now
 
-After the work recorded here the provider `synapt_final_capstone` reports 22 documents and 1,025
-chunks:
+Verified live on 2026-10-07 with `uv run python scripts/verify_synapt_store.py`, which compares the
+provider with the committed [`data/synapt/expected_inventory.json`](../data/synapt/expected_inventory.json)
+(the same check `bootstrap.py check` runs on any machine). The provider `synapt_final_capstone`
+holds **63 documents and 20,914 chunks**, and the application needs nothing more uploaded:
 
-| Documents | Count | Notes |
+| Documents | Count | Verified by |
 |---|---|---|
-| Procedures (SOP-AUTO, PROPERTY, BUSINESS, CONFLICT, REVIEW) | 5 | from the earlier pilot |
-| Claim-card batches `cards-0001` to `cards-0010` | 10 | 1,000 cards, 1,000 chunks |
+| Procedures (SOP-AUTO, PROPERTY, BUSINESS, CONFLICT, REVIEW) | 5 | each `source_id` retrieved |
+| Base claim-card batches `cards-0001` to `cards-0010` | 10 (1,000 chunks) | size and text length match the local batch (every document is exactly 294 characters longer, Synapt's wrapper) |
+| Expansion batches `expanded-0001` to `expanded-0040` | 40 (19,888 chunks for 19,887 cards) | identified by the marker in the header chunk; size and span match the local batch (39 at +1,094 characters, the 387-card batch at +868) |
 | Handler lesson | 1 | created while testing the feedback loop |
 | Earlier pilot claim card (`CLM-0000000012`, masked) | 1 | superseded; ignored by the application |
 | Synapt's own episodic memory of past queries (`doc_type` episodic) | 1 | created by Synapt itself; leave it |
+| Parquet schema document (one chunk) | 1 | from the structured-file upload; carries no cards |
 | **Test and probe documents** | **4** | see below |
+
+The last five rows (8 documents) and the five procedures hold the remaining 26 chunks, so the totals
+add up exactly (1,000 + 19,888 + 26 = 20,914). Those 8 come from the earlier audit and are not matched
+one by one by the check. The 100 million source
+claims are deliberately not in Synapt. **Do not upload the corpus again:** the tenant exposes no
+deletion tool, so duplicates would be permanent, and the ingestion script refuses to run while claim
+cards exist.
 
 **Clean-up for the console.** Four documents are leftovers of this work and can be deleted in the
 Synapt console without effect on the application (they carry no usable identifiers):
@@ -79,6 +91,32 @@ production-format cards (6 of 6 aliases intact), and across the 1,000 uploaded c
 chunks. The default produced chunks of about 4.5 KB (about 14 cards each). The corpus is ingested
 with `chunk_size=100`, which gives about one card per chunk, so a retrieval of 20 chunks returns about
 20 distinct cards.
+
+### Reads are capped, so retrieval cannot inventory the store
+
+Measured 2026-10-07 on a store of 20,914 chunks: `trident_get_chunks` returns **at most 1,923 chunks
+per query** whatever `top_k` is (3,000, 6,000 and 10,000 all returned 1,923), and a `top_k` of 21,000
+fails with a request error (the adapter hides the cause; the failure is immediate, not a timeout). A retrieval inventory is therefore partial, and the old reconciliation
+(`top_k = chunks + 100`) fails outright once the store is this size. Looking a card up by its own text is
+also unreliable: its chunk came back at rank 1 about half the time, and only about a third of sampled
+cards were hit within the top five, for the base cards as much as the expansion ones. **A miss is not
+evidence of absence.** Completeness is verified from the graph instead (next sections).
+
+### The graph answers exactly
+
+`trident_cypher` is read-only, requires the `{provider_id: $provider_id}` filter and accepts no
+parameters other than `query`, so values must be written into the query. Document nodes carry
+`chunk_count`; chunk nodes carry `char_start`, `char_end`, `document_id` and `source_file` but **no
+text**. Every chunk returned by `trident_get_chunks` carries its document's `source_file`, so a header
+chunk found by its batch marker identifies the document, and the document's chunk count and last
+`char_end` can be compared with the local batch. `claims.synapt_inventory` does exactly this.
+
+### Masking also rewrites batch markers
+
+A 9-digit run inside a marker is treated as a US Social Security number: `cardpack_f22102cd4f511272094a`
+is stored as `cardpack_f22102cd4f[US_SSN_6a56812069f5]a`, and so is `cardpack_66c6dfe860387495c667`.
+Both documents were present and complete; only a literal marker search missed them. The verifier's
+`marker_pattern` accepts that rewrite. Avoid long digit runs in any new marker.
 
 ### Throughput and cost
 
@@ -129,8 +167,18 @@ California auto claims within $100 of the claim with three prior claims.
 
 ## Reliability notes for operators
 
-* Run `uv run python scripts/bootstrap.py check` before a demonstration: it logs in, reads the
-  provider statistics and reports the corpus ledger.
+* Run `uv run python scripts/bootstrap.py check` before a demonstration: it logs in and verifies the
+  live provider against `data/synapt/expected_inventory.json` (batches, text spans, procedures), so it
+  gives the same answer on every machine. `scripts/verify_synapt_store.py` runs just that check.
+* To describe a changed corpus, rebuild the inventory with
+  `uv run python scripts/verify_synapt_store.py --write-expected`; it writes the file only after the
+  live provider passes it.
+* The local upload ledger (`artifacts/synapt/*/upload-ledger.jsonl`) is not in Git and is no longer
+  consulted by the check. `ingest_expanded_cards.py --verify-only` still records graph-verified batches
+  in it for the machine that uploaded them.
+* The uploader's own post-submit retrieval check cannot confirm a batch once the store exceeds a few
+  thousand chunks (reads are capped, see above). Do not upload more into this provider; a new corpus
+  belongs in a new provider with a new inventory.
 * `Synapt request failed` almost always means rate limiting or a network blip; wait a minute.
 * Live mode never falls back to fixtures: a Synapt failure fails the investigation visibly.
 * The optional `trident_get_procedures` and `trident_search` calls are off by default

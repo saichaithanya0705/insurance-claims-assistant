@@ -54,6 +54,15 @@ batches were not resubmitted. Asynchronous provider extraction remains unverifie
 latest local evidence. Query-dependent retrieval is partial: absence from a returned list is not
 proof that a card was never ingested. Do not upload the same text batches from the browser as well.
 
+**Update, later on 2026-10-07: extraction is complete and verified.** Statements above about pending or
+unverified extraction record the moment they were written and are superseded. Synapt's graph shows 40
+documents of the expected sizes (38 × 500, 1 × 501 and 1 × 387 chunks for 19,887 cards), each identified
+by its batch marker and matching its local batch's text length; the provider holds 63 documents and
+20,914 chunks. Extraction was genuinely still running when this report was first written (2,526 chunks
+then); it has since finished. The retrieval method could not have confirmed it either way: reads are
+capped at about 1,900 chunks, so a retrieval inventory cannot confirm the later batches.
+Details and the check are in [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 Uploads set `has_ttl=false` when supported, rather than silently using the server's 30-day expiry.
 The ledger records provider, immutable file hash and write-start before side effects. Unknown or
 interrupted responses are reconciled without automatic retry. Verification requires the actual
@@ -106,13 +115,14 @@ failures instead of changing thresholds to manufacture a pass.
 ## Inspect and continue safely
 
 ```powershell
-uv run python scripts/ingest_expanded_cards.py --verify-only --targeted
+uv run python scripts/verify_synapt_store.py
+uv run python scripts/ingest_expanded_cards.py --verify-only
 uv run python scripts/audit_synapt_data.py
 uv run python scripts/inspect_synapt_graph.py
 uv run python scripts/bootstrap.py check
 ```
 
-All inspection commands make no provider writes. `--verify-only` may return only a partial inventory;
+All inspection commands make no provider writes. The two verification commands read Synapt's graph and are exact;
 the ledger preserves prior successful verification. The normal uploader reconciles each tracked
 batch using its marker and complete expected ID set before continuing, and never repeats an uncertain
 write. Use a new empty output directory for any additional expansion so existing upload hashes remain
