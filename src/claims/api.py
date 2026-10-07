@@ -54,7 +54,11 @@ class AccountRequest(LoginRequest):
 def create_app(settings=None, adapter=None, analytics=None):
     settings = settings or Settings()
     analytics = analytics or AnalyticsService(
-        settings.claims_data_path, settings.claims_artifact_dir
+        settings.claims_data_path,
+        settings.claims_artifact_dir,
+        settings.claims_parquet_path,
+        settings.claims_train_rows,
+        settings.claims_duckdb_memory,
     )
     service = InvestigationService(settings, adapter or build_synapt_adapter(settings), analytics)
     evaluation = EvaluationService(service, settings)
@@ -114,6 +118,8 @@ def create_app(settings=None, adapter=None, analytics=None):
         run = deepcopy(run)
         run.pop("mode", None)
         run.pop("agent_mode", None)
+        if run.get("judge"):
+            run["judge"] = {k: v for k, v in run["judge"].items() if k not in ("model", "independent")}
         run["trace"] = [
             {"stage": t["stage"], "status": t["status"], "detail": ""} for t in run.get("trace", [])
         ]
@@ -187,6 +193,7 @@ def create_app(settings=None, adapter=None, analytics=None):
                 "/api/demo-cases",
                 "/api/case-suggestions",
                 "/api/investigations",
+                "/api/queue",
                 "/api/predictions",
                 "/api/auth/logout",
             ) or path.startswith("/api/investigations/")
@@ -346,6 +353,8 @@ def create_app(settings=None, adapter=None, analytics=None):
         max_amount: float | None = Query(None, ge=0, le=1_000_000_000),
         offset: int = Query(0, ge=0),
         limit: int = Query(20, ge=1, le=100),
+        sort: str = Query("recent", pattern="^(recent|priority)$"),
+        tier: str = Query("", pattern="^(|critical|high|medium|low)$"),
     ):
         if date_from and date_to and date_from > date_to:
             raise HTTPException(422, "Start date must be on or before end date")
@@ -360,6 +369,25 @@ def create_app(settings=None, adapter=None, analytics=None):
             date_to=date_to.isoformat() if date_to else "",
             min_amount=min_amount,
             max_amount=max_amount,
+            offset=offset,
+            limit=limit,
+            owner_id=owner(request),
+            sort=sort,
+            tier=tier,
+        )
+
+    @app.get("/api/queue")
+    def queue(
+        request: Request,
+        tier: str = Query("", pattern="^(|critical|high|medium|low)$"),
+        offset: int = Query(0, ge=0),
+        limit: int = Query(20, ge=1, le=100),
+    ):
+        """Investigations still awaiting a handler, highest priority score first."""
+        return service.store.search(
+            sort="priority",
+            tier=tier,
+            open_only=True,
             offset=offset,
             limit=limit,
             owner_id=owner(request),
@@ -394,8 +422,23 @@ def create_app(settings=None, adapter=None, analytics=None):
     def lessons():
         return {
             "candidate_lessons": service.store.lessons(),
-            "promotion": "Reviewed candidates only; no automatic ground-truth or Synapt promotion.",
+            "promotion": "An administrator promotes a reviewed lesson. Promoted lessons are cited as "
+            "evidence in later investigations of the same claim type and, in live mode, ingested "
+            "into the Synapt provider. Nothing is promoted automatically and no ground truth changes.",
         }
+
+    @app.post("/api/feedback/lessons/{lesson_id}/promote")
+    def promote_lesson(request: Request, lesson_id: int):
+        try:
+            return service.promote_lesson(lesson_id, request.state.actor["id"])
+        except KeyError:
+            raise HTTPException(404, "Lesson not found") from None
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except Exception:  # noqa: BLE001 - never echo provider details
+            raise HTTPException(
+                502, "Synapt ingestion failed; the lesson was not promoted. Check Activity."
+            ) from None
 
     @app.get("/api/models/status")
     def models_status():
@@ -419,7 +462,11 @@ def create_app(settings=None, adapter=None, analytics=None):
             "semantic_case_matches": sum(
                 c.get("semantic_match", False) for c in context["similar_cases"]
             ),
-            "limitation": "Fixture mode has no real semantic retrieval; live semantic case fusion requires ingested claim cards with stable claim IDs.",
+            "semantic": context["semantic"],
+            "similar_flagged_count": sum(
+                bool(c.get("dataset_fraud_flag")) for c in context["similar_cases"]
+            ),
+            "limitation": "Fixture mode has no semantic retrieval; semantic ranking comes from Synapt-ingested claim cards and applies only to cards that were ingested.",
         }
 
     @app.post("/api/models/train")
@@ -455,6 +502,8 @@ def create_app(settings=None, adapter=None, analytics=None):
             "mcp_url": settings.synapt_mcp_url,
             "auth_contract": f"Configured {settings.synapt_auth_encoding} / {settings.synapt_auth_username_field}; see docs/SYNAPT_CONTRACT.md",
             "local_history_origin": service.retriever.origin,
+            "history_rows": service.retriever.store.row_count() if service.retriever.store else None,
+            "judge_mode": settings.judge_mode,
         }
 
     return app

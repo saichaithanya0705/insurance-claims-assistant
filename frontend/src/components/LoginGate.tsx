@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react'
-import { LockKeyhole } from 'lucide-react'
+import { FileSearch, Scale, UserCheck } from 'lucide-react'
+import { BrandMark } from './Pipeline'
 import { api, post, setCsrfToken } from '../lib/api'
-import { ErrorBox } from './ui'
+import { ErrorBox, Tilt } from './ui'
 import { RECENT_KEY } from '../lib/format'
 
 export interface User { id: string; username: string; role: 'user' | 'admin' }
@@ -41,8 +42,32 @@ export function LoginGate({ component: Component }: { component: ComponentType<{
     finally { setBusy(false) }
   }
   if (session?.user) return <><Component key={session.user.id} user={session.user} onLogout={logout} authEnabled={session.auth_enabled} />{error && <div className="auth-toast" role="alert">{error}</div>}</>
-  return <main className="login-page"><section className="login-card" aria-labelledby="login-title">
-    <div className="login-mark"><LockKeyhole size={24} /></div><div className="eyebrow">Claims investigator</div>
+  return <main className="login-page">
+    <aside className="login-story" aria-hidden="true">
+      <div className="login-brand"><span className="brand-mark"><BrandMark size={20} /></span><span>Claims Investigator</span></div>
+      <div className="login-pitch">
+        <h2>Evidence first.<br /><em>A person decides.</em></h2>
+        <p>Cited findings, comparable cases and calibrated estimates, prepared for handler review.</p>
+      </div>
+      <Tilt className="login-specimen" max={10}>
+        <div className="specimen-card">
+          <span className="specimen-tag">Illustrative example</span>
+          <div className="specimen-head"><span className="specimen-ring"><b>55</b></span><div><small>Handling priority</small><strong>High</strong></div></div>
+          <ul>
+            <li className="gap"><span />No fire report on file</li>
+            <li className="gap"><span />Ownership documents missing</li>
+            <li className="fact"><span />Policy started 0.3 years ago</li>
+          </ul>
+        </div>
+      </Tilt>
+      <ul className="login-points">
+        <li><FileSearch size={15} /> Every finding cites its source</li>
+        <li><Scale size={15} /> Independent model review</li>
+        <li><UserCheck size={15} /> Nothing approves, denies or pays</li>
+      </ul>
+    </aside>
+    <section className="login-card" aria-labelledby="login-title">
+    <div className="login-mark"><BrandMark size={24} /></div><div className="eyebrow">Claims investigator</div>
     <h1 id="login-title">{session?.setup_required ? 'Create your administrator account' : 'Welcome back'}</h1>
     <p className="section-desc">{session?.setup_required ? 'Set up this local workspace. You can create user and additional admin accounts after signing in.' : 'Sign in with your user or admin account to continue.'}</p>
     <ErrorBox message={error} />
@@ -60,7 +85,7 @@ export function LoginGate({ component: Component }: { component: ComponentType<{
       } catch (e) { setError((e as Error).message); if (session.setup_required) refresh(true) }
       finally { setBusy(false) }
     }}>
-      <div className="field"><label htmlFor="login-username">Username</label><input id="login-username" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} minLength={3} maxLength={64} pattern="[A-Za-z0-9_.-]+" required disabled={busy} autoFocus /><span className="help">Letters, numbers, dots, underscores or hyphens.</span></div>
+      <div className="field"><label htmlFor="login-username">Username</label><input id="login-username" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} minLength={3} maxLength={64} pattern={'[A-Za-z0-9_.\\-]+'} required disabled={busy} autoFocus /><span className="help">Letters, numbers, dots, underscores or hyphens.</span></div>
       <div className="field"><label htmlFor="login-password">Password</label><input id="login-password" type="password" autoComplete={session.setup_required ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} minLength={session.setup_required ? 15 : 1} maxLength={128} required disabled={busy} />{session.setup_required && <span className="help">Use at least 15 characters. A passphrase works well.</span>}</div>
       {session.setup_required && <div className="field"><label htmlFor="login-confirm">Confirm password</label><input id="login-confirm" type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} minLength={15} maxLength={128} required disabled={busy} /></div>}
       <button className="btn primary login-submit" disabled={busy}>{busy ? 'Signing in…' : session.setup_required ? 'Create account and sign in' : 'Sign in'}</button>

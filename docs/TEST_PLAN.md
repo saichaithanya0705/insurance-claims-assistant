@@ -1,52 +1,42 @@
 # Test plan and release gates
 
-Scope: all approved Synapt Claims Investigator features, Basic and Advanced requirements.
-This plan separates code correctness from live provider and model quality. Never label fixture
-regressions as live Synapt verification. Never hide unavailable predictions behind successful cards.
+Scope: every Basic and Advanced requirement of the brief. Code correctness is separated from live
+provider and model quality: fixture-mode tests are never reported as live Synapt verification.
+Results are recorded in [VALIDATION.md](VALIDATION.md).
 
 ## Gates
 
-| Gate | Tests and evidence | Release criterion |
+| Gate | What is checked | Release criterion |
 |---|---|---|
-| G1 contracts | Dates, amounts, category/state/history filters, malformed fields, nonfinite values | Reject invalid requests; no unsafe fallback |
-| G2 retrieval | BM25 rankings, exact filters, closed-before-query temporal check, no matches, semantic case-ID fusion | Filters hold and provenance resolves; fixture semantics explicitly simulated/unavailable |
-| G3 workflow | Classifier ambiguity, missing evidence, contradictions, valid citations, source failures, review/replay | No fabricated success; approval blocked when validation fails |
-| G4 persistence | Restart with saved interrupt; accept/revise; duplicate review; feedback candidates | State resumes exactly; no duplicate external writes |
-| G5 models | Excluded targets/IDs, disjoint policy/time split, SHA provenance, baseline comparison, out-of-distribution notices | Metrics reported honestly; no minimum accuracy claim without domain review |
-| G6 agents | Malformed JSON, unknown IDs, malicious evidence instructions, denied side effects, bounded retries | Schema-valid, source-bounded output or explicit failure; no autonomous adjudication |
-| G7 evaluation | Deterministic goldens + DeepEval faithfulness/relevance/custom recommendation judge | Local regressions pass; judge status and configuration recorded separately |
-| G8 UI | Desktop/mobile, keyboard, labels, validation, errors, evidence navigation, review/feedback | No overflow, fake progress/counts, or unlabeled synthetic content |
-| G9 live Synapt | Authentication, tools/list, schemas, correct provider isolation, known source retrieval | Independently verified after credentials/access; no credential leakage |
-| G10 live ingestion | Dedicated provider permission, 10 then 100 cards, request ID vs extraction completion, chunk/graph/SOP identity | Confirm usable extraction in console; do not equate submission with completion |
-| G11 scale | 1k then 5k provider cards; record ingest cost, failures, P50/P95 query latency, citation/filter regression | Stay within tenant quotas and a agreed budget; no 100M graph ingestion by default |
-
-## Golden cases
-
-Four hand-authored cases cover an ordinary auto claim, theft with missing evidence, a conflicting
-home narrative, and an ambiguous loss. Add failures for empty context, provider errors, forged
-citations, input prompt injection, missing policy wording, and invalid human responses.
-Historical records have no narrative; no generated story may be presented as a dataset fact.
-
-## Quality measurements
-
-Retrieval: independently label relevant case IDs and passages, then Recall@5 and precision@5;
-judge scores do not replace these labels. Generation: faithfulness, contextual relevance,
-recommendation usefulness, correct abstention and citation validity. Risk: PR-AUC, precision,
-recall, calibration/Brier score and review threshold. Regression: MAE, median baseline and
-empirical interval coverage. Show per-type/state slices only when samples are sufficient;
-report counts and never claim fairness from synthetic aggregate metrics.
+| G1 contracts | Dates, amounts, state, type and range filters; unexpected fields; non-finite numbers | Invalid requests refused with 422, and nothing is saved |
+| G2 retrieval | Filters, historical availability, NaN durations, open statuses, candidate pool, fusion weights, the IDF regression, semantic IDs bound by the same filters | Filters always hold; a semantic match never bypasses them |
+| G3 workflow | Abstention, gaps, contradictions, citations, provider failure, review, replay, background judge | No fabricated success; acceptance blocked when validation fails |
+| G4 persistence | Restart with a saved interrupt; duplicate review; a late save cannot erase a judge verdict | State resumes exactly |
+| G5 models | Leakage controls, temporal split with disjoint policies, provenance hash, baselines, explanations, per-claim effects | Metrics reported honestly against baselines |
+| G6 agents and judge | Malformed output, unknown sources, injected instructions, bounded retries, advisory judge | Schema-valid, source-bounded output or an explicit failure |
+| G7 evaluation | Golden cases and DeepEval metrics | Local goldens pass; judge status recorded separately |
+| G8 Synapt adapter | Authentication, token reuse, 401 and 429 handling, schemas, ingestion responses, card ranking, no cited cards | Fail closed; no credential in any message |
+| G9 corpus | Stratified, deterministic selection; masking-safe cards; batch limits; no labels or identifiers | Rebuilds are idempotent; conflicting content is refused |
+| G10 feedback loop | Promotion rules, administrator-only, live ingestion, reuse as evidence, same claim type only | One-shot, explicit, never automatic |
+| G11 UI | Rendering of priority, explanations, judge states, flags, filters, accessibility | Type-check, lint and tests pass |
+| G12 live | The real dataset, real Synapt provider and real models | Recorded in VALIDATION.md with the commands used |
 
 ## Commands
 
-`uv run pytest -q` and `uv run ruff check src tests scripts` are the local gate.
-`uv run python scripts/fetch_dataset.py --count 3000` fetches original synthetic data.
-`POST /api/models/train` evaluates/saves local models. `POST /api/evaluations/run` runs local
-goldens; body `{"judge":true}` also requests optional DeepEval with configured judge credentials.
-Run the live checks using `scripts/synapt_setup.py` only after access is ready.
+```powershell
+uv run pytest -q                                   # backend, offline (no network, no real dataset)
+uv run ruff check src tests scripts
+Set-Location frontend; npm run test; npx tsc -p tsconfig.app.json --noEmit; Set-Location ..
+uv run python scripts/bootstrap.py check           # live readiness
+uv run python scripts/synapt_ingest.py verify      # Synapt semantic precision
+```
 
-## Current status
+Unit tests clear provider settings, point the dataset path at a missing file, and reject external
+HTTP, so a live `.env` cannot turn a regression test into a billed call.
 
-See `VALIDATION.md` and `LIVE_NIM_VALIDATION.md` for actual results. NVIDIA agents and judge
-inference have been tested on synthetic fixtures. Synapt authentication, live ingestion/retrieval,
-model quality on that corpus and real-world insurance accuracy are pending. Fixture coverage is a development
-tool and does not waive those gates.
+## Quality measurements
+
+Retrieval: Synapt precision against chance (claim type, state, amount band, history band). Generation:
+faithfulness, contextual relevance and a safety metric (DeepEval), plus the independent judge.
+Risk: precision, recall, PR-AUC and Brier score against baselines. Regression: MAE against a median
+baseline and empirical interval coverage. No fairness claim is made from synthetic aggregate metrics.

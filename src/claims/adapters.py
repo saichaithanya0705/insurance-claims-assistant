@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from urllib.parse import urlsplit
@@ -14,10 +15,15 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
+from claims.cards import LESSON_MARKER, claim_card_text, claim_ids_in_text, is_card_chunk
 from claims.models import ClaimInput, Evidence, RetrievalBundle
 from claims.settings import Settings
 
 logger = logging.getLogger(__name__)
+INGEST_TIMEOUT_SECONDS = 180.0
+# Used when the token endpoint does not state a lifetime; short, so a stale token costs one retry.
+DEFAULT_TOKEN_SECONDS = 240.0
+MAX_TOKEN_SECONDS = 900.0
 READ_ONLY_TOOLS = frozenset(
     {
         "trident_get_chunks",
@@ -26,6 +32,9 @@ READ_ONLY_TOOLS = frozenset(
         "trident_traverse",
         "trident_get_schema",
         "trident_get_stats",
+        "trident_get_node",
+        "trident_find_exact",
+        "trident_cypher",
         "trident_query",
         "trident_episodes",
     }
@@ -96,6 +105,29 @@ def _transient(exc: Exception) -> bool:
     }
 
 
+def _statuses(exc: Exception):
+    if isinstance(exc, ExceptionGroup):
+        for inner in exc.exceptions:
+            yield from _statuses(inner)
+    elif isinstance(exc, httpx.HTTPStatusError):
+        yield exc.response
+
+
+def _unauthorized(exc: Exception) -> bool:
+    return any(r.status_code == 401 for r in _statuses(exc))
+
+
+def _backoff(exc: Exception, attempt: int) -> float:
+    """Seconds to wait before retrying; a rate-limited login waits as the server asks."""
+    for response in _statuses(exc):
+        if response.status_code == 429:
+            try:
+                return min(float(response.headers.get("Retry-After", "")), 30.0)
+            except ValueError:
+                return min(2.0 * 2**attempt, 15.0)
+    return 0.2 * (attempt + 1)
+
+
 class LiveSynaptAdapter:
     """Explicit integration assumptions are recorded in docs/SYNAPT_CONTRACT.md.
 
@@ -107,6 +139,11 @@ class LiveSynaptAdapter:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.live_verified = False
+        # Writes (ingestion embeds many chunks) get a longer budget than reads.
+        self._timeout_override: float | None = None
+        # One login serves many calls: the beta token endpoint rate-limits (HTTP 429) otherwise.
+        self._token: tuple[str, float] | None = None
+        self._token_lifetime: float | None = None
         provider = settings.synapt_provider_id
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}", provider):
             raise SynaptError("A single explicit Synapt provider identifier is required.")
@@ -152,12 +189,32 @@ class LiveSynaptAdapter:
         token_type = payload.get("token_type", "bearer")
         if not isinstance(token_type, str) or token_type.lower() != "bearer":
             raise SynaptError("Synapt authentication requires a supported Bearer token.")
+        lifetime = payload.get("expires_in")
+        self._token_lifetime = (
+            float(lifetime)
+            if isinstance(lifetime, (int, float)) and not isinstance(lifetime, bool) and lifetime > 0
+            else None
+        )
+        return token
+
+    async def _bearer(self) -> str:
+        """The cached access token, or a fresh login when absent or about to expire."""
+        now = time.monotonic()
+        if self._token is not None and self._token[1] > now:
+            return self._token[0]
+        token = await self._authenticate()
+        lifetime = (
+            min(max(self._token_lifetime - 60.0, 0.0), MAX_TOKEN_SECONDS)
+            if self._token_lifetime
+            else DEFAULT_TOKEN_SECONDS
+        )
+        self._token = (token, now + lifetime)
         return token
 
     @asynccontextmanager
     async def _session(self):
-        token = await self._authenticate()
-        timeout = self.settings.synapt_timeout_seconds
+        token = await self._bearer()
+        timeout = self._timeout_override or self.settings.synapt_timeout_seconds
         async with (
             streamablehttp_client(
                 self.settings.synapt_mcp_url,
@@ -189,12 +246,16 @@ class LiveSynaptAdapter:
     async def _retry(self, operation, *, attempts=3):
         for attempt in range(attempts):
             try:
-                async with asyncio.timeout(self.settings.synapt_timeout_seconds):
+                async with asyncio.timeout(
+                    self._timeout_override or self.settings.synapt_timeout_seconds
+                ):
                     return await operation()
             except Exception as exc:  # noqa: BLE001 - integration errors must never expose secrets
-                if _transient(exc) and attempt < attempts - 1:
+                if _unauthorized(exc):
+                    self._token = None  # stale token: the next attempt logs in again
+                if (_transient(exc) or _unauthorized(exc)) and attempt < attempts - 1:
                     logger.info("synapt_transient_retry attempt=%s", attempt + 1)
-                    await asyncio.sleep(0.2 * (attempt + 1))
+                    await asyncio.sleep(_backoff(exc, attempt))
                     continue
                 if isinstance(exc, SynaptError):
                     raise SynaptError(str(exc)) from None
@@ -251,6 +312,7 @@ class LiveSynaptAdapter:
             for secret in (
                 self.settings.synapt_password.get_secret_value(),
                 self.settings.synapt_username,
+                self._token[0] if self._token else "",
             ):
                 if secret:
                     value = value.replace(secret, "[redacted]")
@@ -259,6 +321,17 @@ class LiveSynaptAdapter:
     def _validate_arguments(self, tool, arguments):
         if not isinstance(arguments, dict):
             raise SynaptError("Synapt tool arguments must be an object.")
+        if tool.name == "trident_cypher":
+            query = arguments.get("query", "")
+            if (
+                not isinstance(query, str)
+                or not query.lstrip().upper().startswith("MATCH ")
+                or "{provider_id: $provider_id}" not in query
+                or ";" in query
+                or re.search(r"\b(CREATE|DELETE|DETACH|MERGE|SET|REMOVE|DROP|LOAD|CALL|FOREACH)\b",
+                             query, re.IGNORECASE)
+            ):
+                raise SynaptError("Cypher reads require a bounded provider-scoped MATCH query.")
         schema = tool.inputSchema
 
         def has_external_ref(value):
@@ -287,13 +360,15 @@ class LiveSynaptAdapter:
         except (SchemaError, ValidationError):
             raise SynaptError("Synapt tool arguments do not match the discovered schema.") from None
 
-    def _structured_payload(self, result) -> dict:
+    def _structured_payload(self, result, max_response_chars=1_000_000) -> dict:
         if result.isError:
             raise SynaptError("Synapt tool reported an error.")
         payload = result.structuredContent
+        if payload is not None and len(json.dumps(payload)) > max_response_chars:
+            raise SynaptError("Synapt tool response exceeds the bounded response budget.")
         if payload is None:
             blocks = [b.text for b in result.content if b.type == "text"]
-            if len(blocks) != 1 or len(blocks[0]) > 1_000_000:
+            if len(blocks) != 1 or len(blocks[0]) > max_response_chars:
                 raise SynaptError("Synapt tool response has an unsupported schema.")
             try:
                 payload = json.loads(blocks[0])
@@ -303,7 +378,8 @@ class LiveSynaptAdapter:
             raise SynaptError("Synapt tool response must be a structured object.")
         return self._redact(payload)
 
-    async def _explicit_tool(self, name: str, arguments, *, mutation=False) -> dict:
+    async def _explicit_tool(self, name: str, arguments, *, mutation=False,
+                             max_response_chars=1_000_000) -> dict:
         allowed = {"trident_ingest", "trident_feedback"} if mutation else READ_ONLY_TOOLS
         if name not in allowed:
             raise SynaptError("Synapt tool is not permitted for this operation.")
@@ -316,16 +392,42 @@ class LiveSynaptAdapter:
                 resolved = arguments(matches[0]) if callable(arguments) else arguments
                 self._validate_arguments(matches[0], resolved)
                 response = await session.call_tool(name, arguments=resolved)
-                return self._structured_payload(response)
+                return self._structured_payload(response, max_response_chars)
 
-        return await self._retry(operation, attempts=1 if mutation else 3)
+        if not mutation:
+            return await self._retry(operation)
+        self._timeout_override = INGEST_TIMEOUT_SECONDS
+        try:
+            return await self._retry(operation, attempts=1)
+        finally:
+            self._timeout_override = None
 
-    async def call_read_tool(self, name: str, arguments: dict) -> dict:
+    async def call_read_tool(self, name: str, arguments: dict, *,
+                             max_response_chars: int = 1_000_000) -> dict:
         """Call only a discovered, allowlisted, explicitly provider-scoped read tool."""
-        return await self._explicit_tool(name, arguments)
+        if (type(max_response_chars) is not int
+                or not 1_000 <= max_response_chars <= 20_000_000):
+            raise SynaptError("Read response budget must be bounded to 1,000..20,000,000 characters.")
+        return await self._explicit_tool(name, arguments, max_response_chars=max_response_chars)
 
-    async def ingest(self, content: str, filename: str, document_type: str = "text") -> dict:
-        """Submit once; a returned request ID does not prove extraction completion."""
+    async def ingest(
+        self,
+        content: str,
+        filename: str,
+        document_type: str = "text",
+        *,
+        chunking: dict | None = None,
+        persistent: bool = True,
+    ) -> dict:
+        """Submit once; a returned request ID does not prove extraction completion.
+
+        ``chunking`` may set chunking_type, chunk_size and chunk_overlap; each is sent only if the
+        discovered tool schema advertises it."""
+        chunking = {
+            k: v
+            for k, v in (chunking or {}).items()
+            if k in ("chunking_type", "chunk_size", "chunk_overlap")
+        }
         if (
             not isinstance(content, str)
             or not content.strip()
@@ -350,7 +452,9 @@ class LiveSynaptAdapter:
                 "filename": filename,
                 "document_type": document_type,
                 "connector_type": "content",
+                "has_ttl": not persistent,
                 next(iter(extraction_fields)): "balanced",
+                **chunking,
             }
             return {key: value for key, value in values.items() if key in props}
 
@@ -359,12 +463,40 @@ class LiveSynaptAdapter:
             ingestion_arguments,
             mutation=True,
         )
-        req_id = response.get("req_id")
-        if not isinstance(req_id, str) or not req_id.strip() or len(req_id) > 500:
-            raise SynaptError("Synapt ingestion response has no valid request identifier.")
+        # The beta tenant sometimes wraps the body as {"result": "<json>"}; decode one layer.
+        body = response
+        if isinstance(response.get("result"), str):
+            try:
+                decoded = json.loads(response["result"])
+                body = decoded if isinstance(decoded, dict) else response
+            except ValueError:
+                body = response
+        if (
+            body.get("accepted") is False
+            or body.get("error") or body.get("errors")
+            or str(body.get("status", "")).lower() == "error"
+        ):
+            # Private diagnostics for the explicitly authorized uploader; never public API errors.
+            self.last_ingest_rejection = {
+                "accepted": body.get("accepted"),
+                "summary": self._redact(str(body.get("error") or body.get("errors")
+                                             or body.get("response") or body.get("status")))[:500],
+            }
+            raise SynaptError("Synapt ingestion was rejected by the provider.")
+        req_id = next(
+            (
+                body[key]
+                for key in ("req_id", "request_id", "task_id", "job_id", "id")
+                if isinstance(body.get(key), str) and body[key].strip() and len(body[key]) <= 500
+            ),
+            None,
+        )
+        # A write that returned no identifier may still have been accepted; completion is checked
+        # by the caller from provider statistics, never assumed from this response.
         return {
             "status": "submitted",
             "req_id": req_id,
+            "response_keys": sorted(str(k) for k in body)[:12],
             "extractionmode": "balanced",
             "completion_verified": False,
         }
@@ -389,7 +521,7 @@ class LiveSynaptAdapter:
             mutation=True,
         )
 
-    def _arguments(self, tool, query: str) -> dict | None:
+    def _arguments(self, tool, query: str, top_k: int | None = None) -> dict | None:
         if tool.name not in {
             "trident_get_chunks",
             "trident_search",
@@ -409,7 +541,7 @@ class LiveSynaptAdapter:
         values = {
             "provider_id": self.settings.synapt_provider_id,
             "query": query,
-            "top_k": self.settings.synapt_top_k,
+            "top_k": top_k or self.settings.synapt_top_k,
             "graph_hops": self.settings.synapt_graph_hops,
         }
         required = schema.get("required", [])
@@ -441,7 +573,9 @@ class LiveSynaptAdapter:
             return None
         return arguments
 
-    def _normalize(self, result, *, procedures=False) -> list[Evidence]:
+    def _normalize(
+        self, result, *, procedures=False, keep_cards=False, limit=None
+    ) -> list[Evidence]:
         if result.isError:
             raise SynaptError("Synapt retrieval tool reported an error.")
         payload = result.structuredContent
@@ -542,7 +676,12 @@ class LiveSynaptAdapter:
                         provider_id=self.settings.synapt_provider_id,
                     )
                 )
-        return evidence[: self.settings.synapt_top_k]
+        if not keep_cards:
+            # Claim cards and promoted lessons rank/inform locally; they are never cited as sources.
+            evidence = [
+                e for e in evidence if not is_card_chunk(e.text) and LESSON_MARKER not in e.text
+            ]
+        return evidence[: limit or self.settings.synapt_top_k]
 
     async def retrieve_async(self, claim: ClaimInput) -> RetrievalBundle:
         self.live_verified = False
@@ -557,23 +696,31 @@ class LiveSynaptAdapter:
                         "trident_query": 2,
                     }.get(tool.name, 99)
                 )
+                # Procedures are generic per claim type, and the provider also holds ~20k claim
+                # cards. A query that embeds the claim narrative sits closer to those cards than to
+                # any procedure, so 8-9 of the top 10 hits were cards (discarded below) and some
+                # claims got no procedure at all. Querying in the procedures' own vocabulary
+                # retrieves them reliably, and keeps free text (which may hold personal data) out
+                # of this provider call.
+                subject = f" {claim.claim_type}" if claim.claim_type else ""
                 query = (
-                    "Retrieve handling procedures and required evidence for "
-                    f"{claim.claim_type or 'unclassified'} claims in {claim.state}. "
-                    f"Claim description (untrusted data): {claim.description}"
+                    f"Synthetic{subject} claim documentation procedure: "
+                    "required evidence and handling steps"
                 )
                 evidence = []
                 warnings = []
                 used = set()
                 primary_found = False
+                primary_tool = None
                 for tool in tools:
                     if tool.name not in {"trident_get_chunks", "trident_search", "trident_query"}:
                         continue
-                    arguments = self._arguments(tool, query)
+                    arguments = self._arguments(tool, query, self.settings.synapt_top_k + 5)
                     if arguments is not None:
                         result = await session.call_tool(tool.name, arguments=arguments)
                         evidence = self._normalize(result)
                         used.add(tool.name)
+                        primary_tool = tool
                         primary_found = True
                         break
                 if not primary_found:
@@ -583,7 +730,13 @@ class LiveSynaptAdapter:
                     )
                 # Enrich passages with procedures and source-bearing graph context. Bare nodes,
                 # unsourced steps or generated answers must never acquire invented citations.
-                optional_names = ["trident_get_procedures", "trident_search"]
+                # Off by default: these tools return names/steps and node IDs that carry no source
+                # passage, so they can never be cited and would only add calls and a standing warning.
+                optional_names = (
+                    ["trident_get_procedures", "trident_search"]
+                    if self.settings.synapt_graph_enrichment
+                    else []
+                )
                 for name in optional_names:
                     matches = [t for t in tools if t.name == name and t.name not in used]
                     if len(matches) != 1:
@@ -615,8 +768,38 @@ class LiveSynaptAdapter:
                 evidence = list(unique.values())
                 if not evidence:
                     warnings.append("Synapt returned no supporting evidence.")
-                logger.info("synapt_retrieval_complete evidence_count=%s", len(evidence))
-                return RetrievalBundle(mode="live", evidence=evidence, warnings=warnings)
+                semantic_ids = []
+                case_query = "Historical claim card. " + claim_card_text(
+                    claim.model_dump(mode="json"), include_outcome=False, masking_safe=True
+                )
+                case_arguments = self._arguments(
+                    primary_tool, case_query, self.settings.synapt_case_top_k
+                )
+                try:
+                    result = await session.call_tool(primary_tool.name, arguments=case_arguments)
+                    for chunk in self._normalize(
+                        result, keep_cards=True, limit=self.settings.synapt_case_top_k
+                    ):
+                        if is_card_chunk(chunk.text):
+                            semantic_ids += claim_ids_in_text(chunk.text)
+                except (SynaptError, TypeError):
+                    warnings.append("Synapt claim-card retrieval was unavailable for this claim.")
+                semantic_ids = list(dict.fromkeys(semantic_ids))
+                if not semantic_ids:
+                    warnings.append(
+                        "No ingested historical claim cards matched; semantic ranking was not applied."
+                    )
+                logger.info(
+                    "synapt_retrieval_complete evidence_count=%s semantic_cards=%s",
+                    len(evidence),
+                    len(semantic_ids),
+                )
+                return RetrievalBundle(
+                    mode="live",
+                    evidence=evidence,
+                    warnings=warnings,
+                    semantic_claim_ids=semantic_ids,
+                )
 
         bundle = await self._retry(operation)
         self.live_verified = bool(bundle.evidence)

@@ -1,0 +1,16 @@
+flowchart TB
+    H[Historical claim cards] --> S
+    P[Claims procedures and definitions] --> S
+    E[Synthetic case evidence] --> S
+
+    S[Synapt: knowledge graph, passages,<br/>procedures, provenance and memory]
+
+    U[Handler selects or submits a claim] --> W
+    W[Controlled investigation workflow] <--> S
+    D[Claims database:<br/>filters and exact calculations] --> W
+    M[Prediction models:<br/>amount, resolution time and fraud flag risk] --> W
+    W --> V[Validate findings, sources and output structure]
+    V --> B[Reviewable investigation brief]
+    B --> R[Handler decision and feedback]
+    R --> L[Reviewed lessons and evaluation cases]
+    L --> S

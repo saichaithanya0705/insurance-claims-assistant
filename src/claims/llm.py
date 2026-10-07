@@ -15,10 +15,21 @@ class CompletionClient:
     def __init__(self, settings, log):
         self.settings, self.log = settings, log
 
-    def complete(self, messages, schema=None, *, model=None, run_id="evaluation", role="judge"):
+    def complete(
+        self,
+        messages,
+        schema=None,
+        *,
+        model=None,
+        run_id="evaluation",
+        role="judge",
+        timeout=None,
+        attempts=2,
+    ):
+        """``timeout`` and ``attempts`` let optional, advisory callers (the judge) fail fast."""
         model = model or self.settings.llm_model
         messages = list(messages)
-        for attempt in range(2):
+        for attempt in range(attempts):
             started = time.perf_counter()
             self.log(
                 run_id,
@@ -40,7 +51,7 @@ class CompletionClient:
                 }
             try:
                 with httpx.Client(
-                    timeout=self.settings.llm_timeout_seconds, follow_redirects=False
+                    timeout=timeout or self.settings.llm_timeout_seconds, follow_redirects=False
                 ) as client:
                     response = client.post(
                         self.settings.llm_base_url.rstrip("/") + "/chat/completions",
@@ -92,7 +103,7 @@ class CompletionClient:
                         "status_code": status,
                     },
                 )
-                if status not in (429, 500, 502, 503, 504) or attempt == 1:
+                if status not in (429, 500, 502, 503, 504) or attempt == attempts - 1:
                     raise CompletionError(
                         f"Model provider rejected request (HTTP {status}); no fixture fallback."
                     ) from None
@@ -108,7 +119,7 @@ class CompletionClient:
                     "model_failure",
                     {"role": role, "attempt": attempt + 1, "reason": reason},
                 )
-                if attempt == 1:
+                if attempt == attempts - 1:
                     raise CompletionError(
                         "Model output or connection failed validation; no fixture fallback."
                     ) from None

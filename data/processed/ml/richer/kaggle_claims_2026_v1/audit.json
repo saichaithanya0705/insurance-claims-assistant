@@ -1,0 +1,43 @@
+{
+  "source_id": "kaggle_claims_2026_v1",
+  "source_url": "https://www.kaggle.com/datasets/mmumairkhattak/insurance-claims-dataset-2026-fd-and-ra",
+  "license_as_published": "MIT",
+  "downloaded_at": "2026-10-07T05:32:33.387236+00:00",
+  "rows": 50000,
+  "columns": [
+    "Claim_ID",
+    "Customer_ID",
+    "Policy_Number",
+    "Age",
+    "Gender",
+    "Region",
+    "Policy_Type",
+    "Premium_Amount",
+    "Coverage_Amount",
+    "Claim_Amount",
+    "Claim_Type",
+    "Credit_Score",
+    "Fraud_Risk_Score",
+    "Fraud_Flag",
+    "Claim_Status",
+    "Settlement_Amount"
+  ],
+  "archive_sha256": "abf3a7630307bf4a58a4aea7f065bb85b7d9ab9380753453ac0b23145d07d2e8",
+  "csv_sha256": "93e84d2b8ea33d2e7098db2d09e464d0c05980ada36a6d8fdf043d6640d049d4",
+  "parquet_sha256": "8bed18ae8cce26f738ac9a96f96cc3122ad4eed793e4e8ecc2b571778753becc",
+  "benchmark_eligible": false,
+  "production_eligible": false,
+  "reasons": [
+    "No incident/filing dates or label observation times",
+    "No incident severity, vehicle, injury or witness fields",
+    "Downloaded dictionary only repeats column names; feature provenance is undocumented",
+    "Fraud_Risk_Score, Claim_Status and Settlement_Amount must not be fraud-model inputs",
+    "Downloaded schema has 16 columns; public description advertised 40"
+  ],
+  "files_in_archive": [
+    "data_dictionary.csv",
+    "insurance_claims_dataset.csv",
+    "insurance_claims_notebook.ipynb"
+  ],
+  "source_notebook_executed": false
+}

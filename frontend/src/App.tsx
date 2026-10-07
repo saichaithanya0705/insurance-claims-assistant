@@ -1,19 +1,24 @@
 import { MotionConfig, motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowLeft,
   BrainCircuit,
   ClipboardCopy,
+  FilePen,
+  FilePlus2,
   FileText,
   FlaskConical,
+  FolderOpen,
+  Gauge,
   History,
-  LayoutGrid,
-  Network,
+  PanelRightOpen,
+  Plug,
   RotateCcw,
   Search,
-  ShieldCheck,
+  UsersRound,
 } from 'lucide-react'
 import { api, post, type DemoCase, type EvaluationStatus, type Health, type ModelStatus, type Run } from './lib/api'
-import { label, loadRecent, money, saveRecent, type RecentRun } from './lib/format'
+import { loadRecent, money, saveRecent, shortTitle, type RecentRun } from './lib/format'
 import { Background, ErrorBox, Pill, ToastProvider, useToast } from './components/ui'
 import { Sidebar, NAV, type View } from './components/Sidebar'
 import { CommandPalette, type PaletteCommand } from './components/CommandPalette'
@@ -120,7 +125,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
     setRecent((list) => {
       const entry: RecentRun = {
         run_id: r.run_id,
-        title: `${r.claim?.description?.slice(0, 70) || 'Untitled incident'} · ${r.claim?.state ?? '—'}`,
+        title: `${shortTitle(r.claim?.description, 60) || 'Untitled incident'} · ${r.claim?.state ?? '—'}`,
         status: r.status,
         amount: r.claim?.claim_amount ?? 0,
         at: Date.now(),
@@ -150,6 +155,27 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
     remember(r)
     if (selectedRun.current === r.run_id) setRun(r)
   }, [remember])
+
+  // The independent judge finishes in the background; pick its verdict up without a reload.
+  const pendingJudgeRun = run?.judge?.status === 'pending' ? run.run_id : null
+  useEffect(() => {
+    if (!pendingJudgeRun) return
+    let attempts = 0
+    const timer = window.setInterval(async () => {
+      attempts += 1
+      try {
+        const latest = await api<Run>(`/api/investigations/${encodeURIComponent(pendingJudgeRun)}`)
+        if (latest.judge && latest.judge.status !== 'pending') {
+          setRun((current) => (current?.run_id === pendingJudgeRun ? { ...current, judge: latest.judge } : current))
+          window.clearInterval(timer)
+        }
+      } catch {
+        /* transient: keep trying until the attempts run out */
+      }
+      if (attempts >= 36) window.clearInterval(timer) // about three minutes at five seconds
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [pendingJudgeRun])
 
   const loadDemo = (index: number) => {
     const demo = demoCases[index]
@@ -235,7 +261,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((o) => !o)
-      } else if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+      } else if (e.altKey && ['1', '2', '3', '4', '5'].includes(e.key)) {
         e.preventDefault()
         const item = NAV.find(n => n.key === e.key)
         if (item && (admin || !item.admin)) setView(item.view)
@@ -248,11 +274,11 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
   /* ---------- Command palette ---------- */
   const commands = useMemo<PaletteCommand[]>(() => {
     const list: PaletteCommand[] = [
-      { id: 'v-cases', group: 'Navigate', label: 'Open saved cases', icon: <History size={15} />, run: () => setView('cases') },
-      { id: 'v-ws', group: 'Navigate', label: 'Investigation workspace', hint: 'Alt 1', icon: <LayoutGrid size={15} />, run: () => setView('workspace') },
-      { id: 'v-q', group: 'Navigate', label: 'Quality & models', hint: 'Alt 2', icon: <ShieldCheck size={15} />, run: () => setView('quality') },
-      { id: 'v-c', group: 'Navigate', label: 'Connection settings', hint: 'Alt 3', icon: <Network size={15} />, run: () => setView('connection') },
-      { id: 'v-accounts', group: 'Navigate', label: 'Manage accounts', icon: <ShieldCheck size={15} />, run: () => setView('accounts') },
+      { id: 'v-ws', group: 'Navigate', label: 'Investigation workspace', hint: 'Alt 1', icon: <FilePlus2 size={15} />, run: () => setView('workspace') },
+      { id: 'v-cases', group: 'Navigate', label: 'Open saved cases', hint: 'Alt 2', icon: <FolderOpen size={15} />, run: () => setView('cases') },
+      { id: 'v-q', group: 'Navigate', label: 'Quality & models', hint: 'Alt 3', icon: <Gauge size={15} />, run: () => setView('quality') },
+      { id: 'v-c', group: 'Navigate', label: 'Connection settings', hint: 'Alt 4', icon: <Plug size={15} />, run: () => setView('connection') },
+      { id: 'v-accounts', group: 'Navigate', label: 'Manage accounts', hint: 'Alt 5', icon: <UsersRound size={15} />, run: () => setView('accounts') },
       ...demoCases.map((d, i) => ({
         id: `demo-${d.id}`,
         group: 'Load demo case',
@@ -338,14 +364,14 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
               ) : (
                 <>
                   <Pill tone={health.status === 'ok' ? 'teal' : 'amber'} dot>
-                    Service {label(health.status)}
+                    {health.status === 'ok' ? 'All systems normal' : 'Service degraded'}
                   </Pill>
                 </>
               )}
               <button className="icon-btn" onClick={() => setPaletteOpen(true)} aria-label="Open command palette (Ctrl K)" title="Command palette (Ctrl K)">
                 <Search size={15} />
               </button>
-              <span className="signed-in">{user.username} · {admin ? 'Admin' : 'User'}</span>
+              <span className="signed-in"><span className="avatar" aria-hidden="true">{user.username.slice(0, 1).toUpperCase()}</span><span className="who"><b>{user.username}</b><small>{admin ? 'Administrator' : 'Handler'}</small></span></span>
               {authEnabled && <button className="btn" disabled={busy} onClick={onLogout}>Sign out</button>}
             </div>
           </header>
@@ -360,7 +386,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                       <h1 className="display" tabIndex={-1}>
                         Claims investigation
                       </h1>
-                      <p className="subtitle">Compare evidence, resolve gaps and prepare the brief for handler review.</p>
+                      {workspaceMode === 'draft' && <p className="subtitle">Compare evidence, resolve gaps and prepare the brief for handler review.</p>}
                     </div>
                     <div className="case-search-wrap"><CaseSearch onOpen={openRun} disabled={busy} onQueryChange={() => setLookupError(null)} /><ErrorBox message={lookupError} /></div>
                   </div>
@@ -371,16 +397,17 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                     </div>
                   ) : null}
 
-                  <div className="case-tools">
-                    <button className="btn" onClick={() => setView('cases')}>Saved cases</button>
-                    <button className="btn" disabled={busy} onClick={resetForm}>New investigation</button>
-                    {run && workspaceMode === 'draft' && <button className="btn" onClick={() => setWorkspaceMode('case')}>Return to saved case</button>}
-                    {workspaceMode === 'case' && form.description && <button className="btn" disabled={busy} onClick={() => setWorkspaceMode('draft')}>Resume draft</button>}
-                    {run && workspaceMode === 'case' && <>
-                      <button className="btn" onClick={() => setDetailsOpen(true)}>Case details · Saved input</button>
-                      <button className="btn" disabled={busy} onClick={() => { setForm(formFromClaim(run.claim)); setFilters(EMPTY_FILTERS); setSelectedDemo(null); setFormError(null); setIntakeSession(n => n + 1); setWorkspaceMode('draft') }}>Create revised investigation</button>
-                      {admin && <button className="btn primary" disabled={busy} onClick={() => setReviewOpen(true)}>Review brief</button>}
-                    </>}
+                  <div className="case-toolbar">
+                    <div className="case-toolbar-nav">
+                      <button className="btn ghost" onClick={() => setView('cases')}><ArrowLeft size={15} /> Saved cases</button>
+                      {run && workspaceMode === 'draft' && <button className="btn ghost" onClick={() => setWorkspaceMode('case')}>Return to case</button>}
+                      {workspaceMode === 'case' && form.description && <button className="btn ghost" disabled={busy} onClick={() => setWorkspaceMode('draft')}>Resume draft</button>}
+                      {workspaceMode === 'case' && <button className="btn ghost" disabled={busy} onClick={resetForm}><FilePlus2 size={15} /> New investigation</button>}
+                    </div>
+                    {run && workspaceMode === 'case' && <div className="case-toolbar-actions">
+                      <button className="btn ghost" onClick={() => setDetailsOpen(true)}><PanelRightOpen size={15} /> Saved input</button>
+                      <button className="btn" disabled={busy} onClick={() => { setForm(formFromClaim(run.claim)); setFilters(EMPTY_FILTERS); setSelectedDemo(null); setFormError(null); setIntakeSession(n => n + 1); setWorkspaceMode('draft') }}><FilePen size={15} /> Revise</button>
+                    </div>}
                   </div>
                   {busy && workspaceMode === 'case' && run && <p role="status">Opening saved investigation… The current case stays visible until loading succeeds.</p>}
                   <div className={`workspace ${workspaceMode === 'draft' && !busy ? 'composer' : 'reading'}`}>
@@ -404,7 +431,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                       onSubmit={investigate}
                       onReset={resetForm}
                     />}
-                    {(busy || workspaceMode === 'case') && <div className="output results-focus" ref={resultsRef} tabIndex={-1} aria-label="Investigation output">
+                    {(busy || workspaceMode === 'case') && <div className="output results-anchor" ref={resultsRef} tabIndex={-1} aria-label="Investigation output">
                       <div>
                         {busy && (workspaceMode === 'draft' || !run) ? (
                           <motion.div key="loading" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
@@ -422,7 +449,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                   {admin && reviewOpen && run && <Inspector title="Review this brief" onClose={() => setReviewOpen(false)}><ReviewPanel run={run} onUpdated={updateReviewedRun} /></Inspector>}
                 </motion.section>
               )}
-              {view === 'cases' && <section><div className="page-head"><h1 className="display" tabIndex={-1}>Cases</h1><button className="btn primary" disabled={busy} onClick={resetForm}>New investigation</button></div><CaseLibrary onOpen={openRun} busy={busy} /></section>}
+              {view === 'cases' && <motion.section key="cases" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}><div className="page-head"><div><div className="eyebrow">Case queue</div><h1 className="display" tabIndex={-1}>Saved cases</h1><p className="subtitle">Open a brief, or sort by priority to work the queue.</p></div><button className="btn primary" disabled={busy} onClick={resetForm}><FilePlus2 size={15} /> New investigation</button></div><CaseLibrary onOpen={openRun} busy={busy} /></motion.section>}
               {admin && view === 'accounts' && <AccountsView />}
               {admin && view === 'quality' && (
                 <motion.div key="quality" exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }}>

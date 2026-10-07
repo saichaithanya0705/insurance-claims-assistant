@@ -51,7 +51,9 @@ class Agents:
             "Use only supplied facts. Separate uncertainty from evidence. Cite supplied source IDs "
             "for every finding/action. Do not invent amounts, dates, rules or sources. "
             "Document names in provided_documents are claimant-reported availability only; "
-            "they never verify existence, authenticity or contents. Do not describe unseen "
+            "they never verify existence, authenticity or contents. Write that the claimant "
+            "\"reports\" a document \"is available\"; never write that it was provided, submitted, "
+            "attached, received or reviewed. Do not describe unseen "
             "document contents or say a named document resolves or fails to resolve a dispute. "
             f"Your objective: {role}. Return only JSON matching this schema: "
             + json.dumps(schema.model_json_schema())

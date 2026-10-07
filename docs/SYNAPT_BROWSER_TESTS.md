@@ -1,5 +1,7 @@
 # Direct Synapt browser tests — 2026-10-06
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 Later testing after the four additional SOP uploads is recorded in
 [SYNAPT_SOP_TESTS.md](SYNAPT_SOP_TESTS.md): four individual content checks passed; a focused
 mixed query recovered all three relevant SOPs, while general mixed citations and metadata remain partial.

@@ -1,6 +1,9 @@
+import asyncio
+import logging
 import re
 import sqlite3
 import threading
+from copy import deepcopy
 from typing import TypedDict
 from uuid import uuid4
 
@@ -9,9 +12,50 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from claims.agents import Agents
+from claims.cards import claim_ids_in_text
+from claims.feedback import lesson_document, lesson_evidence
+from claims.judge import LLMJudge
 from claims.models import ClaimInput, ReviewDecision, SearchFilters
+from claims.priority import score_priority
 from claims.retrieval import HistoricalRetriever
 from claims.store import Store
+
+logger = logging.getLogger(__name__)
+
+DOCUMENT_NAMES = r"(?:documents?|repair estimates?|incident statements?|photos?|photographs?|police reports?)"
+DOCUMENT_RECEIPT_VERBS = r"(?:provided|submitted|uploaded|attached|received|reviewed|verified)"
+
+
+def asserts_document_receipt(text):
+    """Detect unqualified document receipt in either word order, one clause at a time."""
+    clauses = re.split(r"[.!?;,\n]|\b(?:but|however|and|yet|while|although)\b", text.lower())
+    for clause in clauses:
+        matches = list(re.finditer(
+            rf"\b{DOCUMENT_RECEIPT_VERBS}\b.{{0,100}}?\b{DOCUMENT_NAMES}\b"
+            rf"|\b{DOCUMENT_NAMES}\b.{{0,100}}?\b{DOCUMENT_RECEIPT_VERBS}\b",
+            clause,
+        ))
+        if not matches:
+            continue
+        if re.search(r"\b(?:reported|reports|names only|unverified|availability)\b", clause):
+            continue
+        for match in matches:
+            span = match.group()
+            verb_position = match.start() + re.search(rf"\b{DOCUMENT_RECEIPT_VERBS}\b", span).start()
+            negated_verb = re.search(
+                r"\b(?:not|never|cannot|hasn't|haven't|wasn't|weren't|isn't|aren't|didn't|doesn't)\b"
+                r"\s+(?:(?:been|yet|ever|actually|independently|previously|already)\s+)*$",
+                clause[:verb_position],
+            )
+            if negated_verb:
+                continue
+            # 'No police report was received' / 'received no documents' describe absence.
+            document_position = match.start() + re.search(rf"\b{DOCUMENT_NAMES}\b", span).start()
+            before_document = clause[:document_position]
+            if re.search(r"\b(?:no|neither|without)\s*$", before_document):
+                continue
+            return True
+    return False
 
 
 class InvestigationState(TypedDict, total=False):
@@ -29,6 +73,7 @@ class InvestigationState(TypedDict, total=False):
     priority: dict
     predictions: dict
     validation: dict
+    judge: dict
     review: dict | None
     trace: list
     error: str
@@ -47,17 +92,7 @@ def validate_brief(state):
         # Intake contains document names, never uploaded document content. Catch
         # explicit received-content claims deterministically rather than relying
         # only on the model's availability instruction.
-        text = finding["text"].lower()
-        if (
-            finding["kind"] == "fact"
-            and re.search(
-                r"\b(?:provided|submitted|uploaded|attached|reviewed|verified)\b.{0,100}\b(?:documents?|repair estimate|incident statement|photos|police report)\b",
-                text,
-            )
-            and not re.search(
-                r"\b(?:reported|reports|names only|not|no|unverified|availability)\b", text
-            )
-        ):
+        if finding["kind"] == "fact" and asserts_document_receipt(finding["text"]):
             issues.append(
                 "Document names describe reported availability only; document content was not received or reviewed."
             )
@@ -108,8 +143,15 @@ class InvestigationService:
         self.settings, self.adapter, self.analytics = settings, adapter, analytics
         self.store = Store(settings.claims_database_path)
         self.agents = Agents(settings, self.store.event)
-        self.retriever = HistoricalRetriever(settings.claims_data_path)
+        self.judge_agent = LLMJudge(settings, self.store.event)
+        self.retriever = HistoricalRetriever(
+            settings.claims_data_path,
+            settings.claims_parquet_path,
+            candidate_limit=settings.claims_candidate_limit,
+            memory_limit=settings.claims_duckdb_memory,
+        )
         self.lock = threading.RLock()
+        self.judge_threads: list[threading.Thread] = []
         graph = StateGraph(InvestigationState)
         for name, action in (
             ("classify", self.classify),
@@ -118,6 +160,7 @@ class InvestigationService:
             ("risk", self.risk),
             ("recommend", self.recommend),
             ("validate", self.validate),
+            ("judge", self.judge),
             ("review", self.review),
         ):
             graph.add_node(name, action)
@@ -127,7 +170,8 @@ class InvestigationService:
         graph.add_edge("investigate", "risk")
         graph.add_edge("risk", "recommend")
         graph.add_edge("recommend", "validate")
-        graph.add_edge("validate", "review")
+        graph.add_edge("validate", "judge")
+        graph.add_edge("judge", "review")
         graph.add_edge("review", END)
         # LangGraph checkpoints run in a background executor; keep their
         # transactions separate from foreground audit transactions.
@@ -161,18 +205,21 @@ class InvestigationService:
                 "provider_id": None,
             }
         )
-        similar = self.retriever.search(
-            claim,
-            filters,
-            self.settings.synapt_top_k,
-            list(
-                dict.fromkeys(
+        # Semantic matches: Synapt's own ranking of ingested claim cards first, then any claim
+        # identifiers that appear in source-bearing evidence text.
+        semantic_ids = list(
+            dict.fromkeys(
+                bundle.semantic_claim_ids
+                + [
                     match
                     for e in evidence
                     if e["provenance"] == "synapt"
-                    for match in re.findall(r"CLM-[A-Za-z0-9-]+", e["text"])
-                )
-            ),
+                    for match in claim_ids_in_text(e["text"])
+                ]
+            )
+        )
+        similar = self.retriever.search(
+            claim, filters, self.settings.synapt_top_k, semantic_ids
         )
         for case in similar:
             evidence.append(
@@ -186,7 +233,17 @@ class InvestigationService:
                     "provider_id": None,
                 }
             )
-        return {"evidence": evidence, "similar_cases": similar, "warnings": bundle.warnings}
+        # Reviewed handler lessons an administrator promoted: the feedback loop's return path.
+        lessons = self.store.promoted_lessons(claim.claim_type.value if claim.claim_type else None)
+        for lesson in lessons:
+            evidence.append(lesson_evidence(lesson).model_dump(mode="json"))
+        return {
+            "evidence": evidence,
+            "similar_cases": similar,
+            "warnings": bundle.warnings,
+            "semantic": dict(self.retriever.last_search),
+            "lessons_used": [lesson["id"] for lesson in lessons],
+        }
 
     def retrieve(self, state):
         context = self.retrieve_context(
@@ -203,7 +260,12 @@ class InvestigationService:
         } | self.trace(
             state,
             "retrieve",
-            f"{len(context['evidence'])} cited evidence entries; {len(context['similar_cases'])} historical cases. Local ranking is BM25 plus feature similarity; live Synapt case IDs add semantic ranking when available.",
+            f"{len(context['evidence'])} cited evidence entries; {len(context['similar_cases'])} historical "
+            f"cases ranked by BM25 + feature similarity + Synapt semantic rank (Synapt matched "
+            f"{context['semantic']['semantic_candidates']} claim card(s); "
+            f"{context['semantic']['semantic_eligible']} eligible under the filters; "
+            f"{context['semantic']['semantic_in_results']} in the top results); "
+            f"{len(context['lessons_used'])} reviewed handler lesson(s) applied.",
         )
 
     def investigate(self, state):
@@ -219,31 +281,19 @@ class InvestigationService:
 
     def risk(self, state):
         claim = ClaimInput.model_validate(state["claim"])
-        delay = (claim.claim_filed_date - claim.incident_date).days
-        reasons = []
-        if delay > 14:
-            reasons.append(
-                f"Submitted filing delay is {delay} days; investigate explanation, not proof of fraud."
-            )
-        if claim.previous_claims_count >= 3:
-            reasons.append(
-                "Three or more previous claims; inspect relevant history without assuming fraud."
-            )
-        if any(f["kind"] == "contradiction" for f in state["findings"]):
-            reasons.append("Conflicting evidence requires focused handler clarification.")
         predictions = self.analytics.predict(claim)
-        if predictions.get("available") and predictions.get("fraud", {}).get("review_signal"):
-            reasons.append(
-                "Synthetic fraud-flag model exceeds its review threshold; sample precision is weak, so independently investigate rather than infer fraud."
-            )
-        priority = {
-            "service_urgency": "urgent" if claim.claim_amount >= 50000 else "normal",
-            "investigation_priority": "elevated" if reasons else "normal",
-            "reasons": reasons,
-            "policy": "Explicit demo queue policy; thresholds are not insurer rules or legal deadlines.",
-        }
+        priority = score_priority(
+            claim,
+            state["findings"],
+            predictions,
+            state.get("similar_cases", []),
+            state["classification"],
+        )
         return {"priority": priority, "predictions": predictions} | self.trace(
-            state, "risk", "Separated queue policy from statistical predictions"
+            state,
+            "risk",
+            f"Priority {priority['tier']} (score {priority['score']}/100) from stated factors; "
+            "queue policy kept separate from statistical predictions",
         )
 
     def recommend(self, state):
@@ -261,6 +311,53 @@ class InvestigationService:
             "validate",
             "; ".join(validation["issues"]) or "Citation and boundary checks passed",
         )
+
+    def judge(self, state):
+        """Advisory second opinion, kept off the handler's critical path: the brief is saved and
+        shown at once with the verdict "pending"; a background thread merges the result later."""
+        verdict = self.judge_agent.skipped()
+        if verdict is None:
+            verdict = self.judge_agent.pending()
+            snapshot = {
+                key: deepcopy(state[key])
+                for key in ("claim", "evidence", "findings", "recommendations")
+            }
+            thread = threading.Thread(
+                target=self._judge_in_background,
+                args=(state["run_id"], snapshot),
+                name="judge-" + state["run_id"][:8],
+                daemon=True,
+            )
+            self.judge_threads = [t for t in self.judge_threads if t.is_alive()] + [thread]
+            thread.start()
+        detail = {
+            "pending": f"{verdict.get('model')}: review running in the background",
+            "skipped": verdict.get("reason", "skipped"),
+        }[verdict["status"]]
+        return {"judge": verdict} | self.trace(state, "judge", detail)
+
+    def _judge_in_background(self, run_id, snapshot):
+        try:
+            verdict = self.judge_agent.evaluate(snapshot, run_id)
+        except Exception:  # noqa: BLE001 - the judge is advisory and must never raise into a thread
+            verdict = self.judge_agent.pending() | {
+                "status": "failed",
+                "reason": "Judge request failed; brief not judged.",
+            }
+        try:
+            self.store.event(
+                run_id,
+                "judge_verdict",
+                {k: verdict.get(k) for k in ("status", "passed", "score", "model", "independent")},
+            )
+            self.store.set_judge(run_id, verdict)
+        except Exception as error:  # noqa: BLE001 - e.g. the database closed during shutdown
+            logger.warning("judge verdict could not be saved (%s)", type(error).__name__)
+
+    def wait_for_judges(self, timeout=60.0):
+        """Block until background judge threads finish (used by tests and graceful shutdown)."""
+        for thread in list(self.judge_threads):
+            thread.join(timeout)
 
     def review(self, state):
         # No side effect before interrupt: LangGraph replays this node on resume.
@@ -332,6 +429,32 @@ class InvestigationService:
             self.store.save(run_id, result)
             self.store.event(run_id, "handler_review", decision.model_dump())
             return result
+
+    def promote_lesson(self, lesson_id, actor_id):
+        """Make a reviewed handler lesson reusable: later investigations cite it, and in live mode
+        it is also ingested (once, never retried) into the Synapt provider."""
+        with self.lock:
+            lesson = self.store.lesson(lesson_id)
+            if lesson is None:
+                raise KeyError(lesson_id)
+            if not lesson["reviewed"]:
+                raise ValueError("Only feedback on an accepted (reviewed) brief can be promoted")
+            if lesson["promoted"]:
+                raise ValueError("This lesson is already promoted")
+            reference = "local"
+            if self.settings.synapt_mode == "live":
+                run = self.store.get(lesson["run_id"])
+                result = asyncio.run(
+                    self.adapter.ingest(
+                        lesson_document(lesson, run), f"handler-lesson-{lesson_id}.txt"
+                    )
+                )
+                reference = result["req_id"]
+            self.store.mark_promoted(lesson_id, reference, actor_id)
+            self.store.event(
+                lesson["run_id"], "lesson_promoted", {"lesson_id": lesson_id, "reference": reference}
+            )
+            return {"id": lesson_id, "promoted": True, "reference": reference}
 
     def close(self):
         self.checkpoint_connection.close()

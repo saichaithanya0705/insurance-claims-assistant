@@ -109,3 +109,37 @@ def test_substantive_finding_requires_citation_and_negative_conflict_is_rejected
     with pytest.raises(ValidationError, match="Absence"):
         Finding(kind="contradiction", text="No contradiction found", source_ids=["claim:input"])
     assert Finding(kind="limitation", text="Unknown policy coverage", source_ids=[])
+
+
+def test_callers_can_shorten_the_budget_and_disable_retries(monkeypatch):
+    import httpx
+
+    from claims.llm import CompletionClient, CompletionError
+    from claims.settings import Settings
+
+    seen = []
+
+    class Client:
+        def __init__(self, *args, timeout=None, **kwargs):
+            seen.append(timeout)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, *args, **kwargs):
+            raise httpx.ReadTimeout("slow")
+
+    monkeypatch.setattr("claims.llm.httpx.Client", Client)
+    monkeypatch.setattr("claims.llm.time.sleep", lambda seconds: None)
+    settings = Settings(_env_file=None, agent_mode="live", nvidia_api_key="k", llm_timeout_seconds=60)
+    client = CompletionClient(settings, lambda *a: None)
+    with pytest.raises(CompletionError):
+        client.complete([{"role": "user", "content": "x"}], timeout=12, attempts=1)
+    assert seen == [12]  # one attempt, with the caller's shorter timeout
+    seen.clear()
+    with pytest.raises(CompletionError):
+        client.complete([{"role": "user", "content": "x"}])
+    assert seen == [60, 60]  # default: two attempts at the configured timeout

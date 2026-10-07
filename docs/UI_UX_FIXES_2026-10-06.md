@@ -1,5 +1,7 @@
 # UI/UX fixes — 6 October 2026
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 Implemented the ten prioritized findings, F1–F10, from `UI_UX_REVIEW_2026-10-06.md`. The application remains at http://127.0.0.1:8000/. This report separates implemented behavior from outstanding device, accessibility and user-study verification.
 
 ## Issue-by-issue result

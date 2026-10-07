@@ -1,12 +1,67 @@
-import { createContext, useCallback, useContext, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useRef, useState, type HTMLAttributes, type PointerEvent, type ReactNode } from 'react'
+import { motion, useMotionTemplate, useMotionValue, useReducedMotion, useSpring, useTransform } from 'motion/react'
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { cx } from '../lib/format'
 
+/* ---------- 3D tilt surface ----------
+   Pointer position drives a spring-damped rotateX/rotateY in a perspective
+   container, plus a soft glare that follows the cursor. Purely decorative:
+   content is static, and reduced-motion users get a flat surface. */
+export function Tilt({ children, className, max = 6, glare = true }: { children: ReactNode; className?: string; max?: number; glare?: boolean }) {
+  const reduce = useReducedMotion()
+  const px = useMotionValue(0.5)
+  const py = useMotionValue(0.5)
+  const spring = { stiffness: 170, damping: 18, mass: 0.6 }
+  const rotateX = useSpring(useTransform(py, [0, 1], [max, -max]), spring)
+  const rotateY = useSpring(useTransform(px, [0, 1], [-max, max]), spring)
+  const gx = useTransform(px, (v) => `${v * 100}%`)
+  const gy = useTransform(py, (v) => `${v * 100}%`)
+  const background = useMotionTemplate`radial-gradient(520px circle at ${gx} ${gy}, rgb(255 255 255 / 0.55), transparent 45%)`
+  const move = (e: PointerEvent<HTMLDivElement>) => {
+    if (reduce || e.pointerType !== 'mouse') return
+    const box = e.currentTarget.getBoundingClientRect()
+    px.set((e.clientX - box.left) / box.width)
+    py.set((e.clientY - box.top) / box.height)
+  }
+  const reset = () => { px.set(0.5); py.set(0.5) }
+  return (
+    <div className={cx('tilt', className)} onPointerMove={move} onPointerLeave={reset}>
+      <motion.div className="tilt-inner" style={reduce ? undefined : { rotateX, rotateY }}>
+        {children}
+        {glare && !reduce && <motion.span className="tilt-glare" aria-hidden="true" style={{ background }} />}
+      </motion.div>
+    </div>
+  )
+}
+
+/* ---------- Score ring that draws itself; the number is static text ---------- */
+export function ScoreRing({ value, size = 112, stroke = 10, tone = 'teal', children }: { value: number; size?: number; stroke?: number; tone?: string; children?: ReactNode }) {
+  const radius = (size - stroke) / 2
+  const fraction = Math.max(0, Math.min(1, value))
+  return (
+    <div className="score-ring" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--track)" strokeWidth={stroke} />
+        <motion.circle
+          cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={`var(--${tone})`} strokeWidth={stroke} strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          initial={{ pathLength: 0 }} animate={{ pathLength: fraction }} transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
+        />
+      </svg>
+      <div className="score-ring-label">{children}</div>
+    </div>
+  )
+}
+
 /* ---------- Shared surfaces ---------- */
-export function Card({ children, className, spot, ...rest }: HTMLAttributes<HTMLElement> & { spot?: boolean; children: ReactNode }) {
-  // Preserve the existing public prop without creating a pointer-driven effect.
-  void spot
-  return <section className={cx('card', className)} {...rest}>{children}</section>
+// Cards track the pointer in CSS variables so the border spotlight can follow it.
+const spotlight = (e: PointerEvent<HTMLElement>) => {
+  const box = e.currentTarget.getBoundingClientRect()
+  e.currentTarget.style.setProperty('--mx', `${e.clientX - box.left}px`)
+  e.currentTarget.style.setProperty('--my', `${e.clientY - box.top}px`)
+}
+export function Card({ children, className, spot = true, ...rest }: HTMLAttributes<HTMLElement> & { spot?: boolean; children: ReactNode }) {
+  return <section className={cx('card', className)} onPointerMove={spot ? spotlight : undefined} {...rest}>{children}</section>
 }
 
 export const Pill = ({ tone, children, dot }: { tone?: string; children: ReactNode; dot?: boolean }) => (
@@ -36,7 +91,7 @@ export function Gauge({ value, threshold, size = 180 }: { value: number; thresho
   const color = threshold !== undefined && value >= threshold ? 'var(--amber)' : 'var(--teal)'
   return (
     <svg width={size} height={size / 2 + 12} viewBox={`0 0 ${size} ${size / 2 + 12}`} role="img" aria-label={`Dataset flag score ${(value * 100).toFixed(1)} percent${threshold !== undefined ? `; review threshold ${(threshold * 100).toFixed(1)} percent` : ''}`}>
-      <path d={arc} fill="none" stroke="var(--border-strong)" strokeWidth={stroke} strokeLinecap="round" />
+      <path d={arc} fill="none" stroke="var(--track)" strokeWidth={stroke} strokeLinecap="round" />
       {score > 0 && <path d={arc} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" pathLength={1} strokeDasharray={`${score} 1`} />}
       {threshold !== undefined && (
         <line x1={center + Math.cos(angle) * (radius - 12)} y1={center - Math.sin(angle) * (radius - 12)} x2={center + Math.cos(angle) * (radius + 8)} y2={center - Math.sin(angle) * (radius + 8)} stroke="var(--text)" strokeWidth={2} />
@@ -51,7 +106,7 @@ export function Ring({ value, size = 92, stroke = 9, tone = 'teal' }: { value: n
   const fraction = Math.max(0, Math.min(1, value))
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }} aria-hidden="true">
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--border-strong)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--track)" strokeWidth={stroke} />
       {fraction > 0 && <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={`var(--${tone})`} strokeWidth={stroke} strokeLinecap="round" pathLength={1} strokeDasharray={`${fraction} 1`} />}
     </svg>
   )
@@ -64,9 +119,12 @@ export const Bar = ({ value, tone }: { value: number; tone?: 'muted' | 'amber'; 
   </div>
 )
 
-/* Keep shared animation props compatible while displaying all content immediately. */
-export const listVariants = { hidden: {}, show: {} }
-export const itemVariants = { hidden: { opacity: 1 }, show: { opacity: 1 } }
+/* Short staggered entrance on mount. Values are final from the first frame; only position and opacity ease in. */
+export const listVariants = { hidden: {}, show: { transition: { staggerChildren: 0.045, delayChildren: 0.05 } } }
+export const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 260, damping: 26 } },
+}
 export const Background = () => null
 
 /* ---------- Toasts ---------- */

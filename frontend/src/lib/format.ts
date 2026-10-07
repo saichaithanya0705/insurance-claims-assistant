@@ -1,7 +1,19 @@
-export const label = (value: unknown) =>
-  String(value ?? 'Unavailable')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+/** Sentence case for enum-like values: "awaiting_review" -> "Awaiting review". */
+export const label = (value: unknown) => {
+  const text = String(value ?? 'Unavailable').replace(/_/g, ' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** Shortens free text at a word boundary so titles never end mid-word. */
+export const shortTitle = (value: unknown, max = 72) => {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (text.length <= max) return text
+  const cut = text.slice(0, max + 1)
+  const sentence = cut.search(/[.;!?](\s|$)/)
+  if (sentence >= max * 0.45) return text.slice(0, sentence)
+  const space = cut.lastIndexOf(' ')
+  return `${text.slice(0, space > max * 0.5 ? space : max).replace(/[\s,;:–—-]+$/, '')}…`
+}
 
 export const money = (value: unknown, digits = 0) =>
   typeof value === 'number' && Number.isFinite(value)

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import { api } from '../lib/api'
-import { label, money } from '../lib/format'
+import { label, money, shortTitle } from '../lib/format'
 import { validateSuggestions, type CaseSuggestion, type CaseSuggestions } from '../lib/savedSearch'
 
 export function CaseSearch({ onOpen, disabled, onQueryChange }: { onOpen: (id: string) => void; disabled: boolean; onQueryChange: () => void }) {
@@ -70,7 +70,7 @@ export function CaseSearch({ onOpen, disabled, onQueryChange }: { onOpen: (id: s
       <div className="case-search-caption">{query.trim() ? 'Matching claims' : 'Recently saved claims'}<span>{loading ? 'Searching…' : current?.page ? `${current.page.total} found` : ''}</span></div>
       <div id={listId} role="listbox" aria-label="Available claims" aria-busy={loading} className="case-search-list">
         {items.map((item, i) => <div key={item.run_id} id={`${listId}-${i}`} role="option" aria-selected={active === i} className={`case-search-option${active === i ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onPointerMove={() => setActive(i)} onClick={() => choose(item)}>
-          <span className="case-search-title">{item.title}</span>
+          <span className="case-search-title">{shortTitle(item.title, 90)}</span>
           <span className="case-search-meta">{label(item.claim_type)} · {item.state || 'State unspecified'} · {money(item.claim_amount)} · {label(item.status)}</span>
           <span className="case-search-id">{item.run_id}<span>{item.match_kind}</span></span>
         </div>)}

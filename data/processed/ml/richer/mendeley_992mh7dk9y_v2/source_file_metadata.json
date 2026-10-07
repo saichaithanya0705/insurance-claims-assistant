@@ -1,0 +1,17 @@
+{
+  "filename": "insurance_claims.csv",
+  "id": "a39df307-4896-4bb7-a4b8-f7d7fcdefed1",
+  "content_details": {
+    "id": "b0ca7f16-e892-4356-9e8f-a6497137384b",
+    "sha256_hash": "be11b9370c0cda353a4519832803d07bb90a494e91dfd9d56a85aa4093ba5378",
+    "content_type": "text/csv",
+    "size": 266964,
+    "created_date": "2023-08-16T10:00:53.544Z",
+    "download_url": "https://data.mendeley.com/public-files/datasets/992mh7dk9y/files/a39df307-4896-4bb7-a4b8-f7d7fcdefed1/file_downloaded",
+    "view_url": "https://data.mendeley.com/public-files/datasets/992mh7dk9y/files/a39df307-4896-4bb7-a4b8-f7d7fcdefed1/file_viewed",
+    "download_expiry_time": "2126-10-07T05:32:23.285003097Z"
+  },
+  "size": 266964,
+  "last_modified_date": "2023-08-16T10:00:53.544Z",
+  "status": "COMPLETED"
+}

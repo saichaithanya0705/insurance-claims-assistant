@@ -35,7 +35,7 @@ export interface FormState {
 export interface FilterState {
   claim_type: '' | ClaimType
   state: string
-  claim_status: '' | 'approved' | 'denied'
+  claim_status: '' | 'approved' | 'denied' | 'pending' | 'under_review'
   min_amount: string
   max_amount: string
   min_previous_claims: string
@@ -492,11 +492,14 @@ export function IntakeForm({
                   </div>
                   <div className="field">
                     <label htmlFor="f-status">Historical outcome</label>
-                    <select id="f-status" value={filters.claim_status} onChange={(e) => setF('claim_status', e.target.value as FilterState['claim_status'])}>
-                      <option value="">All outcomes</option>
+                    <select id="f-status" aria-describedby="f-status-help" value={filters.claim_status} onChange={(e) => setF('claim_status', e.target.value as FilterState['claim_status'])}>
+                      <option value="">Settled claims (approved or denied)</option>
                       <option value="approved">Approved</option>
                       <option value="denied">Denied</option>
+                      <option value="pending">Pending (no outcome yet)</option>
+                      <option value="under_review">Under review (no outcome yet)</option>
                     </select>
+                    <small id="f-status-help" className="field-hint">Pending and under-review claims were already on file but have no final outcome, so they show no resolution time.</small>
                   </div>
                   <div className="field-row">
                     <div className="field">

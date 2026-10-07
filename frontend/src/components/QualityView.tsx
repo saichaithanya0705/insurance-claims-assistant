@@ -1,6 +1,6 @@
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
-import { BrainCircuit, Check, FlaskConical, Lightbulb, Loader2, Play, RefreshCw, Star, X } from 'lucide-react'
+import { BookmarkPlus, BrainCircuit, Check, FlaskConical, Lightbulb, Loader2, Play, RefreshCw, Star, X } from 'lucide-react'
 import { api, post, type EvaluationStatus, type Lessons, type ModelStatus, type TaskMetric } from '../lib/api'
 import { label, money, num, pct } from '../lib/format'
 import { Bar, Card, DataView, ErrorBox, Pill, Ring, itemVariants, listVariants, useToast } from './ui'
@@ -59,7 +59,7 @@ function TaskCard({ task, title, metric }: { task: string; title: string; metric
                 ['Baseline PR-AUC', metric.baseline_pr_auc],
               ] as const
             ).map(([n, v], i) => (
-              <div className="bar-row" key={n} style={{ gridTemplateColumns: '100px 1fr 52px' }}>
+              <div className="bar-row" key={n} style={{ gridTemplateColumns: '120px 1fr 64px' }}>
                 <span className="nm">{n}</span>
                 <Bar value={v ?? 0} tone={n.startsWith('Baseline') ? 'muted' : undefined} delay={i * 0.06} />
                 <span className="vl">{pct(v)}</span>
@@ -72,7 +72,7 @@ function TaskCard({ task, title, metric }: { task: string; title: string; metric
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
           <CompareLower name="Test MAE" model={metric.mae} baseline={metric.baseline_mae} fmt={fmt} />
-          <div className="compare-row" style={{ gridTemplateColumns: '120px 1fr 52px' }}>
+          <div className="compare-row" style={{ gridTemplateColumns: '120px 1fr 64px' }}>
             <span>Interval coverage</span>
             <Bar value={metric.heldout_interval_coverage ?? 0} delay={0.2} />
             <span className="vl">{pct(metric.heldout_interval_coverage, 0)}</span>
@@ -87,6 +87,21 @@ function TaskCard({ task, title, metric }: { task: string; title: string; metric
             .join(' · ')}
         </p>
       )}
+      {!!metric.global_explanation?.summary?.length && (
+        <details className="disclose">
+          <summary>What drives {title.toLowerCase()}</summary>
+          <div className="disclose-body">
+            <ul className="effects plain">
+              {metric.global_explanation.summary.map((line) => (
+                <li key={line}>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+            {metric.global_explanation.effects_method && <p className="footnote">{metric.global_explanation.effects_method}</p>}
+          </div>
+        </details>
+      )}
     </motion.div>
   )
 }
@@ -99,6 +114,7 @@ export function QualityView() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<null | 'train' | 'eval' | 'refresh'>(null)
   const [judge, setJudge] = useState(false)
+  const [promoting, setPromoting] = useState<number | null>(null)
 
   const refresh = useCallback(async () => {
     setError(null)
@@ -141,6 +157,20 @@ export function QualityView() {
       setError((e as Error).message)
     } finally {
       setBusy(null)
+    }
+  }
+
+  const promote = async (id: number) => {
+    setPromoting(id)
+    setError(null)
+    try {
+      await post(`/api/feedback/lessons/${id}/promote`)
+      toast('Lesson promoted. Later investigations of the same claim type will cite it.')
+      await refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPromoting(null)
     }
   }
 
@@ -213,7 +243,7 @@ export function QualityView() {
                 {models.reason || 'Models are unavailable.'}
                 {models.data_present === false && (
                   <p style={{ marginTop: 8 }}>
-                    Fetch data first: <code className="mono">uv run python scripts/fetch_dataset.py --count 3000</code>
+                    Download the dataset first: <code className="mono">uv run python scripts/bootstrap.py data</code>
                   </p>
                 )}
               </div>
@@ -237,7 +267,7 @@ export function QualityView() {
               </span>
               Investigation evaluations
             </h2>
-            {evals && <Pill tone={evals.status === 'completed' ? 'teal' : undefined}>{label(evals.status)}</Pill>}
+            {evals && <Pill tone={evals.overall_passed === true ? 'teal' : evals.status === 'completed' ? 'amber' : undefined}>{evals.overall_passed === true ? 'Checks passed' : evals.status === 'completed' ? 'Review results' : label(evals.status)}</Pill>}
           </div>
           <div className="card-body">
             <div className="actions-row">
@@ -293,8 +323,9 @@ export function QualityView() {
                 <div style={{ marginTop: 16 }}>
                   <div className="section-title">
                     <h3>LLM judge</h3>
-                    <Pill tone={evals.judge_status === 'completed' ? 'teal' : evals.judge_status === 'not_run' ? undefined : 'amber'}>{label(evals.judge_status)}</Pill>
+                    <Pill tone={evals.judge_quality_passed === true ? 'teal' : evals.judge_status === 'not_run' ? undefined : 'amber'}>{evals.judge_quality_passed === true ? 'Quality checks passed' : label(evals.judge_status)}</Pill>
                   </div>
+                  {evals.judge_expected_metrics !== undefined && <p className="footnote">{evals.judge_completed_metrics ?? 0}/{evals.judge_expected_metrics} metrics completed · {evals.judge_passed_metrics ?? 0} passed. Completion reports execution; individual scores determine quality.</p>}
                   {!!evals.judge_results?.length && (
                     <div className="bars">
                       {evals.judge_results.map((r, i) => (
@@ -322,10 +353,10 @@ export function QualityView() {
             </span>
             Feedback candidates
           </h2>
-          <span className="step-tag">{lessons?.candidate_lessons.length ?? 0} CANDIDATE(S)</span>
+          <span className="step-tag">{lessons?.candidate_lessons.length ?? 0} {(lessons?.candidate_lessons.length ?? 0) === 1 ? "candidate" : "candidates"}</span>
         </div>
         <div className="card-body">
-          <p className="section-desc">Patterns from saved handler feedback on reviewed runs. Candidates require review before promotion to knowledge or evaluation cases.</p>
+          <p className="section-desc">Handler feedback on accepted briefs. Promote a lesson to make it reusable: later investigations of the same claim type cite it as a reviewed handler lesson, and live mode also ingests it into the Synapt provider. Nothing is promoted automatically, and promoted notes never decide a claim.</p>
           {!lessons ? (
             <div className="skeleton" style={{ height: 60 }} />
           ) : lessons.candidate_lessons.length === 0 ? (
@@ -342,8 +373,20 @@ export function QualityView() {
                   <div style={{ minWidth: 0 }}>
                     <p>{l.note}</p>
                     <span className="mono" style={{ color: 'var(--text-3)', fontSize: 12 }}>
+                      {l.claim_type ? `${l.claim_type} · ${l.state ?? ''} · ` : ''}
                       {l.run_id}
                     </span>
+                  </div>
+                  <div className="lesson-action">
+                    {l.promoted ? (
+                      <Pill tone="teal" dot>
+                        Promoted
+                      </Pill>
+                    ) : (
+                      <button className="btn" onClick={() => promote(l.id)} disabled={promoting !== null} aria-label={`Promote lesson ${l.id} for reuse`}>
+                        {promoting === l.id ? <Loader2 size={14} className="spin" /> : <BookmarkPlus size={14} />} Promote
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               ))}

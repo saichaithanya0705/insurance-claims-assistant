@@ -1,16 +1,17 @@
 import { motion } from 'motion/react'
-import { Command, LayoutGrid, Network, ShieldCheck } from 'lucide-react'
+import { Command, FilePlus2, FolderOpen, Gauge, Plug, UsersRound } from 'lucide-react'
 import { BrandMark } from './Pipeline'
 import { cx, money, timeAgo, type RecentRun } from '../lib/format'
 
 export type View = 'workspace' | 'cases' | 'quality' | 'connection' | 'accounts'
 
-export const NAV: { view: View; label: string; icon: typeof LayoutGrid; key: string; admin?: boolean }[] = [
-  { view: 'workspace', label: 'Investigation', icon: LayoutGrid, key: '1' },
-  { view: 'quality', label: 'Quality & models', icon: ShieldCheck, key: '2', admin: true },
-  { view: 'cases', label: 'Saved cases', icon: LayoutGrid, key: '4' },
-  { view: 'connection', label: 'Connection', icon: Network, key: '3', admin: true },
-  { view: 'accounts', label: 'Accounts', icon: ShieldCheck, key: '', admin: true },
+// Shortcut numbers follow the order the items appear in, so Alt+N matches what users see.
+export const NAV: { view: View; label: string; icon: typeof FilePlus2; key: string; admin?: boolean }[] = [
+  { view: 'workspace', label: 'Investigation', icon: FilePlus2, key: '1' },
+  { view: 'cases', label: 'Saved cases', icon: FolderOpen, key: '2' },
+  { view: 'quality', label: 'Quality & models', icon: Gauge, key: '3', admin: true },
+  { view: 'connection', label: 'Connection', icon: Plug, key: '4', admin: true },
+  { view: 'accounts', label: 'Accounts', icon: UsersRound, key: '5', admin: true },
 ]
 
 const dotTone = (status: string) =>
@@ -55,17 +56,12 @@ export function Sidebar({
               onClick={() => onView(item.view)}
               aria-current={active ? 'page' : undefined}
               aria-label={item.label}
-              title={item.label}
+              title={`${item.label} (Alt ${item.key})`}
             >
-              {active && (
-                <>
-                  <motion.span layoutId="nav-bg" className="nav-bg" transition={{ type: 'spring', stiffness: 420, damping: 34 }} />
-                  <motion.span layoutId="nav-bar" className="nav-bar" transition={{ type: 'spring', stiffness: 420, damping: 34 }} />
-                </>
-              )}
-              <Icon size={18} />
+              {active && <motion.span layoutId="nav-bg" className="nav-bg" transition={{ type: 'spring', stiffness: 420, damping: 34 }} />}
+              <Icon size={17} strokeWidth={1.8} />
               <span className="lbl">{item.label}</span>
-              {item.key && <span className="kbd">Alt {item.key}</span>}
+              <span className="kbd">Alt {item.key}</span>
             </button>
           )
         })}
@@ -75,10 +71,10 @@ export function Sidebar({
         <div className="recent">
           <div className="nav-label">Recent runs</div>
           {recent.slice(0, 5).map((run) => (
-            <button key={run.run_id} className="recent-item" onClick={() => onOpenRecent(run.run_id)} title={run.run_id}>
+            <button key={run.run_id} className="recent-item" onClick={() => onOpenRecent(run.run_id)} title={run.title}>
               <span className="t">
                 <span className={cx('status-dot', dotTone(run.status))} />
-                {run.title}
+                <span className="t-text">{run.title}</span>
               </span>
               <span className="m">
                 {money(run.amount)} · {timeAgo(run.at)}

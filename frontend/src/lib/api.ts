@@ -19,7 +19,7 @@ export interface ClaimInput {
 export interface SearchFilters {
   claim_type?: ClaimType
   state?: string
-  claim_status?: 'approved' | 'denied'
+  claim_status?: 'approved' | 'denied' | 'pending' | 'under_review'
   min_amount?: number
   max_amount?: number
   min_previous_claims?: number
@@ -51,11 +51,22 @@ export interface SimilarCase {
   claim_type: string
   state: string
   claim_amount: number
+  deductible?: number | null
+  previous_claims_count?: number | null
+  policyholder_tenure_years?: number | null
   claim_status: string
   days_to_resolution: number | null
+  /** Dataset label on the historical claim (synthetic; not proof of fraud). */
+  dataset_fraud_flag?: boolean | null
+  /** Pending / under review: on file before this claim, no final outcome. */
+  open_case?: boolean
   similarity_score: number
   score_kind?: string
   semantic_match?: boolean
+  /** Position in Synapt's own ranking of ingested claim cards (1 = best). */
+  semantic_rank?: number | null
+  /** 'fusion': among the closest claims; 'semantic': added because Synapt ranks it related in meaning. */
+  surfaced_by?: 'fusion' | 'semantic'
   match_reasons: string[]
   differences: string[]
   provenance: string
@@ -66,11 +77,36 @@ export interface FeatureImportance {
   score_drop: number
 }
 
+export interface EffectPoint {
+  value: string | number
+  mean_prediction: number
+}
+
+/** Direction of one feature's effect (partial dependence): associations, not causes. */
+export interface FeatureEffect {
+  feature: string
+  kind: 'numeric' | 'categorical'
+  direction: 'higher_values_increase' | 'higher_values_decrease' | 'non_monotonic' | 'varies_by_category' | 'little_effect'
+  spread: number
+  points: EffectPoint[]
+  highest?: EffectPoint
+  lowest?: EffectPoint
+}
+
 export interface GlobalExplanation {
   scope?: string
   interpretation?: string
   scoring?: string
   features?: FeatureImportance[]
+  effects?: FeatureEffect[]
+  effects_method?: string
+  summary?: string[]
+}
+
+export interface LocalExplanation {
+  method: string
+  unit: string
+  contributions: { feature: string; value: string | number; typical_value: string | number; effect: number }[]
 }
 
 export interface EstimatePrediction {
@@ -81,6 +117,7 @@ export interface EstimatePrediction {
   interval?: [number, number]
   interval_label?: string
   global_explanation?: GlobalExplanation
+  local_explanation?: LocalExplanation | null
 }
 
 export interface FraudPrediction {
@@ -91,6 +128,7 @@ export interface FraudPrediction {
   review_signal?: boolean
   meaning?: string
   global_explanation?: GlobalExplanation
+  local_explanation?: LocalExplanation | null
 }
 
 export interface Predictions {
@@ -103,6 +141,20 @@ export interface Predictions {
   amount?: EstimatePrediction
   resolution?: EstimatePrediction
   fraud?: FraudPrediction
+}
+
+export interface JudgeVerdict {
+  status: 'pending' | 'completed' | 'skipped' | 'failed'
+  reason?: string
+  model?: string
+  independent?: boolean
+  passed?: boolean
+  grounded?: boolean
+  boundary_respected?: boolean
+  recommendations_supported?: boolean
+  score?: number
+  issues?: string[]
+  summary?: string
 }
 
 export interface TraceItem {
@@ -128,9 +180,16 @@ export interface Run {
     investigation_priority: string
     reasons: string[]
     policy?: string
+    /** 0-100 queue priority; every point is attributed in `components`. */
+    score?: number
+    tier?: 'critical' | 'high' | 'medium' | 'low'
+    components?: { points: number; reason: string }[]
+    similar_flagged?: number
   }
   predictions?: Predictions
   validation?: { passed: boolean; issues: string[]; scope?: string }
+  /** Independent LLM judge verdict (advisory). `model` / `independent` are admin-only. */
+  judge?: JudgeVerdict
   review?: { decision: 'accept_brief' | 'request_revision'; note: string } | null
   trace?: TraceItem[]
   error?: string
@@ -158,6 +217,9 @@ export interface IntegrationStatus {
   mcp_url: string
   auth_contract: string
   local_history_origin: string
+  /** Rows in the Parquet file queried in place; null when only a sample/fixtures are loaded. */
+  history_rows?: number | null
+  judge_mode?: string
 }
 
 export interface TaskMetric {
@@ -234,10 +296,27 @@ export interface EvaluationStatus {
   judge_results?: JudgeResult[]
   judge_expected_metrics?: number
   judge_completed_metrics?: number
+  judge_passed_metrics?: number
+  judge_quality_passed?: boolean | null
+  overall_passed?: boolean
+  judge_requested?: boolean
+  judge_independent?: boolean
+}
+
+export interface Lesson {
+  id: number
+  run_id: string
+  rating: number
+  note: string
+  promoted: boolean
+  promoted_at?: string | null
+  promotion_ref?: string | null
+  claim_type?: string | null
+  state?: string | null
 }
 
 export interface Lessons {
-  candidate_lessons: { id: number; run_id: string; rating: number; note: string }[]
+  candidate_lessons: Lesson[]
   promotion: string
 }
 

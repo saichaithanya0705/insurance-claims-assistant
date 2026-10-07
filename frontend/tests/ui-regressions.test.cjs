@@ -100,3 +100,48 @@ test('readable source labels and technical warnings preserve original evidence',
   const packed = '# File name\nsource_id: opaque-uuid\nprovenance: synapt\nRequest an incident statement and repair estimate when applicable.'
   assert.equal(sourceExcerpt({ text: packed }), 'Request an incident statement and repair estimate when applicable.')
 })
+
+const { Explanation } = require('../src/components/Results.tsx')
+const presentation = require('../src/lib/presentation.ts')
+test('explanations show what moved this claim and the learned direction without claiming causality', () => {
+  const html = render(Explanation, {
+    item: {
+      local_explanation: { method: 'One-at-a-time substitution; not additive or causal', unit: 'USD', contributions: [{ feature: 'claim_type', value: 'business', typical_value: 'auto', effect: 52000 }, { feature: 'deductible', value: 500, typical_value: 1000, effect: -300 }] },
+      global_explanation: { features: [{ feature: 'claim_type', score_drop: 13488.7 }], summary: ['claim type: highest predicted claim amount (USD) for business (107,013.55 USD), lowest for renters (4,271.00 USD).'], effects_method: 'Partial dependence; associations, not causal effects' },
+    },
+  })
+  assert.match(html, /For this claim, compared with a typical one/)
+  assert.match(html, /\+\$52,000/)
+  assert.match(html, /−\$300/)
+  assert.match(html, /typical auto/)
+  assert.match(html, /What the model learned across the sample/)
+  assert.match(html, /highest predicted claim amount[^<]*business[^<]*lowest for renters/)
+  assert.match(html, /not additive or causal/)
+  assert.match(html, /associations, not causal effects/)
+  assert.equal(render(Explanation, { item: {} }), '')
+})
+test('fraud flags and open claims are labelled as dataset labels, never as outcomes or proof', () => {
+  const flagged = presentation.comparisonSnapshot({ claim_id: 'CLM-1', claim_type: 'auto', state: 'TX', claim_amount: 100, claim_status: 'under_review', days_to_resolution: null, open_case: true, dataset_fraud_flag: true, previous_claims_count: 2, similarity_score: 0.03, match_reasons: [], differences: [] })
+  assert.equal(flagged.historical_outcome, 'under_review (no final outcome)')
+  assert.match(flagged.dataset_fraud_flag, /synthetic label, not proof/)
+  assert.equal(flagged.previous_claims, 2)
+  assert.equal(presentation.comparisonSnapshot({ claim_id: 'CLM-2', claim_type: 'home', state: 'FL', claim_amount: 1, claim_status: 'approved', days_to_resolution: 5, similarity_score: 0, match_reasons: [], differences: [] }).dataset_fraud_flag, 'not recorded')
+  assert.equal(presentation.provenanceLabel('handler_lesson'), 'Reviewed handler lesson')
+  assert.match(presentation.directionLabel('higher_values_increase'), /higher estimate/)
+  assert.equal(presentation.directionLabel('little_effect'), 'Little effect')
+})
+test('trace shows the audited queue priority and flags a concerned independent review', () => {
+  const run = { status: 'awaiting_review', trace: [{ stage: 'validate', status: 'complete', detail: '' }, { stage: 'judge', status: 'complete', detail: '' }], validation: { passed: true, issues: [] }, judge: { status: 'completed', passed: false }, priority: { service_urgency: 'urgent', investigation_priority: 'elevated', score: 72, tier: 'critical' } }
+  const html = render(TracePanel, { run })
+  assert.match(html, /Queue priority: Critical \(72\/100\)/)
+  assert.match(html, /Judge: warn/)
+  assert.match(html, /Validate: done/)
+  const clean = render(TracePanel, { run: { ...run, judge: { status: 'completed', passed: true } } })
+  assert.match(clean, /Judge: done/)
+})
+test('a pending independent review is shown as in progress, not as a failure or a pass', () => {
+  const run = { status: 'awaiting_review', trace: [{ stage: 'validate', status: 'complete', detail: '' }, { stage: 'judge', status: 'complete', detail: '' }], validation: { passed: true, issues: [] }, judge: { status: 'pending', reason: 'running' } }
+  const html = render(TracePanel, { run })
+  assert.match(html, /Judge: active/)
+  assert.doesNotMatch(html, /Judge: warn|Judge: done/)
+})

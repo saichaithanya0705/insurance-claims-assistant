@@ -304,3 +304,136 @@ The explicit tenant contract, bounded decoding, provider checks and malformed-pa
 
 ### Other valid patterns
 A tenant-specific versioned adapter or an advertised structured MCP result contract would simplify normalization. Graph-derived evidence can be added after validating links back to original chunks; the current app safely cites original passages instead. Typed evidence-applicability outputs plus independent semantic evaluation offer stronger acceptance gates than prompts alone. Alphabetic synthetic record keys or a platform-supported structured-ID exemption could restore identity matching; coordinate with the Synapt team before changing privacy processing.
+
+
+---
+
+# 2026-10-06: full dataset, Synapt-first retrieval, and the audit fixes
+
+An audit of the project against the brief found five partial requirements and several missing
+deliverables. This round fixed them against the real 100M-row dataset and the real Synapt provider.
+Each entry gives the decision, the alternative rejected, and the evidence.
+
+| Decision | Alternative rejected | Evidence |
+|---|---|---|
+| **Query the Parquet file in place with DuckDB** for filters, similar claims and training samples | Load it into memory (does not fit); ingest it all into Synapt (years, see below); keep the 3,000-row JSON slice (not random, hid the NaN trap, made the fraud model weak) | 100M rows scanned in 3 to 5 s; fraud precision rose from 28% to 56% on a proper sample |
+| **Handle NaN durations in SQL** (`TRY_CAST`) | Trust the JSON API's null | The file stores pending durations as NaN; the API had converted them to null |
+| **Synapt holds a 1,000-card sample, not the dataset** | Upload everything | Ingestion is about 100 cards per call at 2 to 3 minutes per call |
+| **Masking-safe identifiers** (lower-case letters-only alias, opaque region token) | Upload the original IDs and names | A probe against the real tenant showed digits, upper-case tokens and place names are rewritten before indexing |
+| **One card per chunk** (`chunk_size=100` tokens) | Default chunking | The default packed about 14 cards per chunk |
+| **Weighted fusion (Synapt 0.5), same candidate pool, extras shown separately** | Equal-weight fusion | A semantic outlier (a $3,393 NJ claim) ranked above exact $8,500 TX matches |
+| **No IDF in the keyword leg** | Standard BM25 | The root cause of that outlier: IDF rewards rare terms in a pool of near-identical claims. A regression test reproduces it |
+| **Independent judge, in the background** | Judge inline; judge with the author model | Inline cost one brief 67 s; the first candidate judge took over a minute; the author-model judge is not independent. `gpt-oss-20b` completed 4 of 5 verdicts in 12 to 23 s |
+| **Cache the Synapt access token; honour `Retry-After`** | A login per call | The token endpoint rate-limited (HTTP 429) after a burst |
+| **Promotion by an administrator closes the feedback loop** | Automatic learning; ingesting every rating | Lessons are human text. Nothing is promoted automatically, lessons carry no claim identifiers, and they never decide a claim |
+| **Audited priority score** (every point attributed) | An opaque score; a single label | Handlers can see why a claim ranks where it does; `GET /api/queue` orders by it |
+| **Direction-of-effect and per-claim explanations** | Importance only | The brief asks how characteristics affect outcomes, which importance alone cannot answer |
+| **All four dataset statuses are filterable** | Only approved and denied | Pending and under-review claims are real, and are labelled as having no outcome |
+| **Tell the agents to write "reports ... is available"** | Rely on the validator alone | The validator correctly held a brief saying a document "has been provided"; the wording cut that from one in four to zero in four |
+| **Optional Synapt graph calls off by default** | Always call them | Their responses carry no source passages, so they are never citable; they only added calls and a standing warning |
+| **Unit tests never touch the real dataset** | Let tests pick up the default path | Test time rose from 46 s to 6 minutes when they accidentally scanned 100M rows |
+| **Remove the old corpus scripts and tests** | Keep both | They produced the masked-ID cards and referenced a 3,000-row file |
+| **A pptx deck in `docs/`** | Only a script | The brief lists a 10-minute presentation as a deliverable |
+
+## What was measured, not assumed
+
+* Synapt's semantic precision on 60 claims: 1.7x chance on claim type, 1.5x on amount band, none on
+  prior claims ([SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md)).
+* DeepEval on live runs: 8 of 12 metrics pass; Contextual Relevancy is the weak one.
+* The independent judge's latency and reliability across five models, of which only two answered.
+
+## Not done
+
+* Uploading the full dataset to Synapt (infeasible through the ingestion tool; a ticket-store
+  provider via the console is the untested route).
+* Docker packaging (the Docker daemon was not running to test it).
+## Original-plan reference document and diagram archive
+
+### What I did
+Saved `PROJECT_PLAN.md` and a self-contained `PROJECT_PLAN.html` with the complete planning substance,
+framework decision and both supplied flowcharts. Stored PNG/SVG diagram images, exact Mermaid sources
+and a byte-for-byte copy of the pasted transcript under `docs/images/project-plan/`. The HTML embeds
+both images and the original transcript; the README links to the plan. Local generation helpers are
+kept in `artifacts/` for reproducibility.
+
+### Why this approach
+A structured Markdown plan is easy to revisit and maintain, while the offline HTML is a portable single
+file with readable tables, navigation and images. Preserving the original transcript retains all wording
+and historical details independently of the organized plan.
+
+### Why not the alternative
+A link back to chat would not create the requested reusable file. Mermaid code alone requires a renderer
+and would not guarantee that the images appear offline. Replacing the original plan with the current
+architecture would lose the historical recommendation and framework rationale.
+
+### What was the issue / root cause
+The original recommendation, framework comparison and diagrams were distributed across conversation
+messages and a pasted transcript, without a dedicated reference document containing the image assets.
+
+### Why this works best
+The original design is labeled as a plan, with links to evolving implementation documents; it does not
+turn historical capability assumptions into current verification claims. Both diagrams preserve the
+supplied nodes and relationships, and editable sources remain available. No application behavior,
+credentials, data or runtime settings were changed.
+
+### Other valid patterns
+A PDF would be useful for fixed-page printing; a Word document would support nontechnical editing.
+The HTML supports browser printing, and the SVGs can be reused in presentations without losing resolution.
+
+## 2026-10-07: end-to-end test against the brief, and four fixes
+
+### What was found
+The running system was tested from sign-in to the brief, against the brief's three example questions
+and against ground truth computed independently from all 100,000,000 rows. Retrieval, models,
+explanations, filters, ranking, roles, review and feedback all matched the data (amount model MAE
+$15,105 against a best-possible $15,095; resolution MAE 6.3 d against 6.31 d; every cited historical
+claim matched the Parquet exactly). Four defects were found and fixed.
+
+### What was the issue / root cause
+1. **No handling procedure for many claims.** The procedure query embedded the claim narrative. With about
+   20,900 claim cards now in the provider, 8 or 9 of the 10 hits were cards, which are discarded by design,
+   so the burst-pipe and ambiguous claims got no procedure and the brief said none was supplied.
+2. **Weak input checks.** `ZZ` and `XX` passed as states; a description of ten spaces or only symbols passed.
+3. **Personal data echoed.** An SSN, card number, email and phone in the description were stored, sent to the
+   language model and repeated in the brief.
+4. **Judge failures.** About a quarter of independent reviews failed: both 35 s attempts timed out on endpoint
+   latency when briefs ran back to back.
+
+### Why this works best
+1. The procedure query now uses the procedures' own vocabulary and the claim type, not the narrative
+   (`adapters.py`). Measured against the live provider, every test claim now gets four or five real
+   procedures instead of zero to four. It also keeps free text out of that provider call.
+2. `ClaimInput` and `SearchFilters` accept only the 50 states and DC, and a description must hold at least
+   five letters after trimming (`models.py`).
+3. `redact_personal_data` masks SSNs, Luhn-valid card numbers, emails and phone numbers when a claim is
+   accepted, so the masked text is what is stored, sent and retrieved. Dates, amounts, claim and policy IDs
+   are left alone (covered by tests).
+4. The judge's per-attempt budget is 60 s (`JUDGE_TIMEOUT_SECONDS`, maximum 120). It runs in the
+   background, so the longer budget cannot delay a brief.
+
+### Not changed, and why
+The brief lists individual similar claims but no outcome rate for the whole neighbourhood, so "varied
+outcomes" can describe a group that is 93% approved. A neighbourhood summary would fix that; it is a
+feature, not a bug fix, and is left for a decision.
+
+# UI redesign: formal light workspace with verdict band — 2026-10-07
+
+## What I did
+Rebuilt `frontend/src/index.css` as one token-based system (type scale 12–36px, radii 6/10/16, tinted
+shadows) and removed the trailing `!important` patch blocks that inverted caption and heading sizes.
+Bundled Geist, Source Serif 4 and JetBrains Mono through `@fontsource-variable` (no runtime font requests).
+Added a verdict band to the case brief (priority ring, open gaps, fraud-flag signal, next step), turned
+Saved cases into a compact queue with filters behind a toggle, ordered findings so gaps and contradictions
+come first, gave the login a brand panel, and added decorative 3D tilt tiles and a cursor-following card border.
+Fixed: select chevrons drawn at the top-left, titles cut mid-word (frontend `shortTitle`, backend `_short_title`),
+wrapping shortcut badges, out-of-order Alt shortcuts (now 1–5 in display order), duplicate nav icons,
+Title Case enum labels (now sentence case), the full-width focus outline around results, and misaligned Quality bars.
+
+## Why this approach
+The user asked for a more professional, likeable UI and confirmed a formal light theme over a dark one.
+Numbers stay factual from the first frame: motion only affects position, tilt and ring drawing, and
+reduced-motion users get a static surface.
+
+## Why not the alternative
+A dark sidebar or dark theme was considered and rejected as less formal for a claims tool.
+A component-library migration would add risk without fixing the identified defects.

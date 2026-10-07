@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 860" width="1280" height="860" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>AI-Powered Insurance Claims Assistant: architecture</title>
+  <desc>A handler uses a React UI served by a FastAPI service. A LangGraph workflow classifies, retrieves, investigates, assesses risk, recommends, validates, judges and pauses for human review. It reads the 100M-row Parquet dataset through DuckDB, retrieves procedures and claim cards from a Synapt provider over MCP, uses scikit-learn models, and calls NVIDIA NIM models. Reviewed feedback is promoted back into Synapt and later investigations.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .t { fill: #0f172a; }
+      .m { fill: #475569; }
+      .h { font-weight: 700; }
+      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; }
+      .node { fill: #ecfeff; stroke: #0f766e; stroke-width: 1.5; }
+      .gate { fill: #fffbeb; stroke: #b45309; stroke-width: 1.5; }
+      .data { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 1.5; }
+      .syn { fill: #ecfdf5; stroke: #047857; stroke-width: 1.5; }
+      .llm { fill: #eff6ff; stroke: #1d4ed8; stroke-width: 1.5; }
+      .loop { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.5; stroke-dasharray: 6 4; }
+      .line { stroke: #475569; stroke-width: 1.8; fill: none; }
+      .loopline { stroke: #0f766e; stroke-width: 2; fill: none; stroke-dasharray: 7 5; }
+    </style>
+  </defs>
+  <rect width="1280" height="860" fill="#ffffff"/>
+  <text x="40" y="44" font-size="24" class="t h">AI-Powered Insurance Claims Assistant</text>
+  <text x="40" y="68" font-size="14" class="m">Hybrid retrieval over 100M synthetic claims, Synapt knowledge, multi-stage LangGraph workflow, human review gate</text>
+
+  <!-- Clients -->
+  <rect x="40" y="96" width="250" height="64" rx="12" class="box"/>
+  <text x="56" y="122" font-size="15" class="t h">Handler / Administrator</text>
+  <text x="56" y="143" font-size="12.5" class="m">intake, review, queue, quality</text>
+  <rect x="330" y="96" width="260" height="64" rx="12" class="box"/>
+  <text x="346" y="122" font-size="15" class="t h">React UI (static bundle)</text>
+  <text x="346" y="143" font-size="12.5" class="m">served by the same FastAPI app</text>
+  <path d="M290 128 H330" class="line" marker-end="url(#arrow)"/>
+  <path d="M460 160 V196" class="line" marker-end="url(#arrow)"/>
+
+  <!-- FastAPI -->
+  <rect x="40" y="196" width="300" height="396" rx="14" class="panel"/>
+  <text x="58" y="224" font-size="16" class="t h">FastAPI microservice</text>
+  <rect x="56" y="238" width="268" height="62" rx="9" class="box"/>
+  <text x="68" y="260" font-size="13" class="t h">Access control</text>
+  <text x="68" y="280" font-size="12" class="m">login sessions, CSRF, user / admin roles</text>
+  <rect x="56" y="310" width="268" height="62" rx="9" class="box"/>
+  <text x="68" y="332" font-size="13" class="t h">Input guardrails</text>
+  <text x="68" y="352" font-size="12" class="m">strict Pydantic models, date and range checks</text>
+  <rect x="56" y="382" width="268" height="196" rx="9" class="box"/>
+  <text x="68" y="404" font-size="13" class="t h">Core endpoints</text>
+  <text x="68" y="428" font-size="12" class="m">POST /api/investigations</text>
+  <text x="68" y="447" font-size="12" class="m">POST /api/search (hybrid, filtered)</text>
+  <text x="68" y="466" font-size="12" class="m">POST /api/predictions</text>
+  <text x="68" y="485" font-size="12" class="m">GET  /api/queue (priority order)</text>
+  <text x="68" y="504" font-size="12" class="m">POST /api/investigations/{id}/review</text>
+  <text x="68" y="523" font-size="12" class="m">POST /api/investigations/{id}/feedback</text>
+  <text x="68" y="542" font-size="12" class="m">POST /api/feedback/lessons/{id}/promote</text>
+  <text x="68" y="561" font-size="12" class="m">POST /api/models/train, /api/evaluations/run</text>
+
+  <!-- LangGraph workflow -->
+  <path d="M340 394 H372" class="line" marker-end="url(#arrow)"/>
+  <rect x="372" y="196" width="540" height="396" rx="14" class="panel"/>
+  <text x="390" y="224" font-size="16" class="t h">LangGraph investigation workflow</text>
+  <text x="390" y="243" font-size="12" class="m">checkpointed in SQLite; pauses for a human at the review gate</text>
+
+  <rect x="388" y="262" width="118" height="92" rx="10" class="node"/>
+  <text x="398" y="284" font-size="13" class="t h">1 Classify</text>
+  <text x="398" y="303" font-size="11" class="m">claim type agent;</text>
+  <text x="398" y="318" font-size="11" class="m">abstains when the</text>
+  <text x="398" y="333" font-size="11" class="m">category is unclear</text>
+  <rect x="528" y="262" width="118" height="92" rx="10" class="node"/>
+  <text x="538" y="284" font-size="13" class="t h">2 Retrieve</text>
+  <text x="538" y="303" font-size="11" class="m">filters + BM25 +</text>
+  <text x="538" y="318" font-size="11" class="m">features + Synapt</text>
+  <text x="538" y="333" font-size="11" class="m">semantic rank</text>
+  <rect x="668" y="262" width="118" height="92" rx="10" class="node"/>
+  <text x="678" y="284" font-size="13" class="t h">3 Investigate</text>
+  <text x="678" y="303" font-size="11" class="m">gaps, conflicts,</text>
+  <text x="678" y="318" font-size="11" class="m">comparisons, every</text>
+  <text x="678" y="333" font-size="11" class="m">finding cited</text>
+  <rect x="808" y="262" width="88" height="92" rx="10" class="node"/>
+  <text x="818" y="284" font-size="13" class="t h">4 Risk</text>
+  <text x="818" y="303" font-size="11" class="m">3 models,</text>
+  <text x="818" y="318" font-size="11" class="m">audited</text>
+  <text x="818" y="333" font-size="11" class="m">priority score</text>
+  <path d="M506 308 H528" class="line" marker-end="url(#arrow)"/>
+  <path d="M646 308 H668" class="line" marker-end="url(#arrow)"/>
+  <path d="M786 308 H808" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="388" y="400" width="118" height="92" rx="10" class="node"/>
+  <text x="398" y="422" font-size="13" class="t h">5 Recommend</text>
+  <text x="398" y="441" font-size="11" class="m">bounded handler</text>
+  <text x="398" y="456" font-size="11" class="m">actions, each</text>
+  <text x="398" y="471" font-size="11" class="m">with sources</text>
+  <rect x="528" y="400" width="118" height="92" rx="10" class="node"/>
+  <text x="538" y="422" font-size="13" class="t h">6 Validate</text>
+  <text x="538" y="441" font-size="11" class="m">schema, citations,</text>
+  <text x="538" y="456" font-size="11" class="m">no coverage / fraud</text>
+  <text x="538" y="471" font-size="11" class="m">decisions</text>
+  <rect x="668" y="400" width="118" height="92" rx="10" class="node"/>
+  <text x="678" y="422" font-size="13" class="t h">7 Judge</text>
+  <text x="678" y="441" font-size="11" class="m">independent LLM</text>
+  <text x="678" y="456" font-size="11" class="m">scores grounding</text>
+  <text x="678" y="471" font-size="11" class="m">and boundaries</text>
+  <rect x="808" y="400" width="88" height="92" rx="10" class="gate"/>
+  <text x="818" y="422" font-size="13" class="t h">8 Review</text>
+  <text x="818" y="441" font-size="11" class="m">human gate:</text>
+  <text x="818" y="456" font-size="11" class="m">accept or</text>
+  <text x="818" y="471" font-size="11" class="m">revise</text>
+  <path d="M852 354 V378 H447 V400" class="line" marker-end="url(#arrow)"/>
+  <path d="M506 446 H528" class="line" marker-end="url(#arrow)"/>
+  <path d="M646 446 H668" class="line" marker-end="url(#arrow)"/>
+  <path d="M786 446 H808" class="line" marker-end="url(#arrow)"/>
+  <text x="390" y="528" font-size="12" class="m">Every finding and recommendation must cite a supplied source.</text>
+  <text x="390" y="548" font-size="12" class="m">Statistical estimates, queue priority and retrieval scores stay separate.</text>
+  <text x="390" y="568" font-size="12" class="m">Nothing here approves, denies or pays a claim; the handler decides.</text>
+
+  <!-- Knowledge and data -->
+  <rect x="948" y="196" width="292" height="396" rx="14" class="panel"/>
+  <text x="966" y="224" font-size="16" class="t h">Data, knowledge and models</text>
+  <rect x="964" y="238" width="260" height="84" rx="10" class="data"/>
+  <text x="976" y="260" font-size="13" class="t h">Parquet: 100,000,000 claims</text>
+  <text x="976" y="279" font-size="11.5" class="m">queried in place with DuckDB:</text>
+  <text x="976" y="295" font-size="11.5" class="m">filters, similar claims, training sample,</text>
+  <text x="976" y="311" font-size="11.5" class="m">open and settled statuses</text>
+  <rect x="964" y="332" width="260" height="96" rx="10" class="syn"/>
+  <text x="976" y="354" font-size="13" class="t h">Synapt provider (MCP)</text>
+  <text x="976" y="373" font-size="11.5" class="m">procedures (SOPs), 1,000 claim cards,</text>
+  <text x="976" y="389" font-size="11.5" class="m">reviewed handler lessons; semantic</text>
+  <text x="976" y="405" font-size="11.5" class="m">ranking by masking-safe claim aliases</text>
+  <rect x="964" y="438" width="260" height="66" rx="10" class="data"/>
+  <text x="976" y="460" font-size="13" class="t h">Models (scikit-learn)</text>
+  <text x="976" y="479" font-size="11.5" class="m">amount, resolution time, fraud flag,</text>
+  <text x="976" y="495" font-size="11.5" class="m">with direction-of-effect explanations</text>
+  <rect x="964" y="514" width="260" height="66" rx="10" class="llm"/>
+  <text x="976" y="536" font-size="13" class="t h">NVIDIA NIM</text>
+  <text x="976" y="555" font-size="11.5" class="m">Nemotron writes the brief;</text>
+  <text x="976" y="571" font-size="11.5" class="m">Gemma judges it independently</text>
+  <path d="M912 308 H948" class="line" marker-end="url(#arrow)"/>
+  <path d="M912 446 H948" class="line" marker-end="url(#arrow)"/>
+
+  <!-- SQLite -->
+  <rect x="372" y="628" width="540" height="64" rx="12" class="box"/>
+  <text x="390" y="654" font-size="14" class="t h">SQLite (local, WAL)</text>
+  <text x="390" y="675" font-size="12" class="m">LangGraph checkpoints, audit log, users and sessions, handler feedback</text>
+  <path d="M642 592 V628" class="line" marker-end="url(#arrow)"/>
+
+  <!-- Feedback loop -->
+  <rect x="40" y="728" width="1200" height="96" rx="14" class="loop"/>
+  <text x="60" y="756" font-size="15" class="t h">Feedback loop (closed)</text>
+  <text x="60" y="780" font-size="13" class="m">Handler rates an accepted brief  →  administrator promotes the reviewed lesson  →  stored as a handler_lesson, and ingested into Synapt in live mode</text>
+  <text x="60" y="802" font-size="13" class="m">→  retrieved as cited evidence in later investigations of the same claim type. Nothing is promoted automatically; lessons never decide a claim.</text>
+  <path d="M930 728 V392 H964" class="loopline" marker-end="url(#arrowTeal)"/>
+  <text x="936" y="716" font-size="11" fill="#0f766e">promote</text>
+</svg>

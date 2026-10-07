@@ -1,7 +1,7 @@
 # Portable SQLite databases
 
-`claims.sqlite` includes the 28 saved investigations and their workflow/audit state
-from this local workspace (about 5.4 MiB). It is a consistent SQLite backup, checked
+`claims.sqlite` includes the 55 saved investigations and their workflow/audit state
+from this local workspace (about 15 MiB; refreshed 2026-10-07). It is a consistent SQLite backup, checked
 for configured credentials. On a new default checkout, the app copies it into the
 working `data/runtime/claims.sqlite` once; existing working databases are preserved.
 Legacy cases without an owner are visible only to administrators. Regenerate it with

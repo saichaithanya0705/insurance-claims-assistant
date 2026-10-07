@@ -1,0 +1,12 @@
+flowchart TD
+    A[Claim input] --> B[Validate and classify]
+    B --> C[Evidence investigator]
+    B --> D[Risk analyst]
+    S[Synapt MCP: evidence, graph,<br/>procedures and episodes] <--> C
+    M[Prediction models] --> D
+    C --> E[Recommendation writer]
+    D --> E
+    E --> V[Validate output and evidence]
+    V --> R[Handler review]
+    R --> F[Reviewed feedback]
+    F --> S

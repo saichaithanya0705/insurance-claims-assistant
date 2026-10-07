@@ -1,5 +1,7 @@
 # Live project evaluation — 2026-10-06
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 **Verdict: the live demonstration workflow works; production and bulk expansion are not signed off.**
 The application authenticated to Synapt, retrieved uploaded source passages and used NVIDIA inference
 through LangGraph. It did not fall back to fixtures. Numeric identity preservation and semantic quality

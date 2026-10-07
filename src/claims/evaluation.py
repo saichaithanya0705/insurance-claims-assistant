@@ -2,10 +2,87 @@ import asyncio
 import importlib.util
 import json
 import math
+import re
 
+from pydantic import ValidationError
+
+from claims.agents import Classification
 from claims.demo import DEMO_CASES
+from claims.judge import brief_contract_issues
 from claims.llm import CompletionClient
 from claims.models import ClaimInput, SearchFilters
+
+METRIC_COUNT = 3
+METRIC_THRESHOLD = 0.5  # Preserve the existing release threshold; never tune it to pass a run.
+
+
+def golden_case_checks(demo, run, settings):
+    """Independently check a returned brief rather than trusting its passed flag."""
+    contract_valid = not brief_contract_issues(run)
+    try:
+        classification = Classification.model_validate(run["classification"])
+    except (ValidationError, KeyError, TypeError):
+        classification = None
+        contract_valid = False
+    findings = run.get("findings") if isinstance(run.get("findings"), list) else []
+    recommendations = run.get("recommendations") if isinstance(run.get("recommendations"), list) else []
+    evidence = run.get("evidence") if isinstance(run.get("evidence"), list) else []
+    ids = {e.get("source_id") for e in evidence if isinstance(e, dict)}
+    items = findings + recommendations
+    citations_valid = bool(items) and all(
+        isinstance(item, dict) and isinstance(item.get("source_ids"), list)
+        and all(source in ids for source in item["source_ids"])
+        for item in items
+    )
+    expected_valid = demo["id"] != "unknown"
+    validation = run.get("validation") if isinstance(run.get("validation"), dict) else {}
+    recomputed = None
+    if contract_valid:
+        from claims.workflow import validate_brief
+
+        recomputed = validate_brief(run)["passed"]
+    checked = {
+        "completed_to_review": run.get("status") == (
+            "awaiting_review" if expected_valid else "needs_manual_review"
+        ),
+        "brief_schema_valid": contract_valid,
+        "all_citations_resolve": citations_valid,
+        "findings_have_citations": bool(findings) and all(
+            isinstance(f, dict) and (f.get("kind") == "limitation" or bool(f.get("source_ids")))
+            for f in findings
+        ),
+        "recommendations_have_citations": bool(recommendations) and all(
+            isinstance(r, dict) and bool(r.get("source_ids")) for r in recommendations
+        ),
+        "expected_validation_outcome": validation.get("passed") is expected_valid,
+        "validation_independently_verified": recomputed is expected_valid
+        and validation.get("passed") is recomputed,
+        "expected_classification": classification is not None
+        and classification.claim_type == demo["claim"]["claim_type"]
+        and classification.needs_review is (not expected_valid),
+        "handler_gate": "review" in run and run["review"] is None,
+        "mode_truthful": run.get("mode") == settings.synapt_mode,
+        "agent_mode_truthful": run.get("agent_mode") == settings.agent_mode,
+    }
+    if demo["id"] == "unknown":
+        checked["abstains_on_ambiguous_type"] = classification is not None and (
+            classification.needs_review and classification.claim_type is None
+        )
+    if demo["id"] in ("theft-gap", "home-conflict"):
+        kind, pattern, name = (
+            ("gap", r"\b(?:police|law enforcement)\b", "missing_evidence_surfaced")
+            if demo["id"] == "theft-gap" else
+            ("contradiction", r"\b(?:pipe|water|leak|cause)\b", "contradiction_surfaced")
+        )
+        checked[name] = any(
+            isinstance(f, dict) and f.get("kind") == kind
+            # A requested-document gap can cite its procedure while a separate fact
+            # cites claimant-reported absence; a contradiction must cite the statements.
+            and (kind == "gap" or "claim:input" in f.get("source_ids", []))
+            and re.search(pattern, f.get("text", ""), re.IGNORECASE) is not None
+            for f in findings
+        )
+    return checked
 
 
 def judge_case_payload(output):
@@ -51,37 +128,19 @@ class EvaluationService:
         results = []
         outputs = []
         for demo in DEMO_CASES:
-            run = self.investigations.create(
-                ClaimInput.model_validate(demo["claim"]), SearchFilters()
-            )
+            try:
+                run = self.investigations.create(
+                    ClaimInput.model_validate(demo["claim"]), SearchFilters()
+                )
+                checked = golden_case_checks(demo, run, self.settings)
+            except Exception as error:  # noqa: BLE001 - continue the suite; never expose provider errors
+                run = {"run_id": None, "status": "failed"}
+                checked = {"case_execution_succeeded": False}
+                self.investigations.store.event(
+                    "evaluation", "evaluation_case_failure",
+                    {"case": demo["id"], "error_type": type(error).__name__},
+                )
             outputs.append(run)
-            ids = {e["source_id"] for e in run.get("evidence", [])}
-            checked = {
-                "completed_to_review": run["status"] in ("awaiting_review", "needs_manual_review"),
-                "all_citations_resolve": all(
-                    s in ids
-                    for f in run.get("findings", []) + run.get("recommendations", [])
-                    for s in f["source_ids"]
-                ),
-                "recommendations_have_citations": bool(run.get("recommendations"))
-                and all(r["source_ids"] for r in run.get("recommendations", [])),
-                "expected_validation_outcome": run.get("validation", {}).get("passed")
-                is (demo["id"] != "unknown"),
-                "handler_gate": run.get("review") is None,
-                "mode_truthful": run.get("mode") == self.settings.synapt_mode,
-            }
-            if demo["id"] == "unknown":
-                checked["abstains_on_ambiguous_type"] = (
-                    run.get("classification", {}).get("needs_review") is True
-                )
-            if demo["id"] == "theft-gap":
-                checked["missing_evidence_surfaced"] = any(
-                    f["kind"] == "gap" for f in run.get("findings", [])
-                )
-            if demo["id"] == "home-conflict":
-                checked["contradiction_surfaced"] = any(
-                    f["kind"] == "contradiction" for f in run.get("findings", [])
-                )
             results.append(
                 {
                     "case": demo["id"],
@@ -100,6 +159,11 @@ class EvaluationService:
             "scope": "Golden-case schema, citation and behavior regression in the reported mode; not a semantic grounding or real-world accuracy guarantee.",
             "judge_status": "not_run",
             "judge_results": [],
+            "judge_quality_passed": None,
+            "judge_requested": judge,
+            "judge_model": self.settings.deepeval_model or None,
+            "judge_independent": bool(self.settings.deepeval_model)
+            and self.settings.deepeval_model != self.settings.llm_model,
         }
         if judge:
             if not self.status()["deepeval_installed"] or not self.status()["judge_configured"]:
@@ -109,12 +173,18 @@ class EvaluationService:
             else:
                 try:
                     self.latest["judge_results"] = self._judge(outputs)
-                    expected = len(outputs) * 3
+                    expected = len(outputs) * METRIC_COUNT
                     completed = sum(
                         r.get("status") == "completed" for r in self.latest["judge_results"]
                     )
                     self.latest["judge_expected_metrics"] = expected
                     self.latest["judge_completed_metrics"] = completed
+                    passed = sum(
+                        r.get("status") == "completed" and r.get("passed") is True
+                        for r in self.latest["judge_results"]
+                    )
+                    self.latest["judge_passed_metrics"] = passed
+                    self.latest["judge_quality_passed"] = completed == expected and passed == expected
                     self.latest["judge_status"] = (
                         "completed"
                         if completed == expected
@@ -130,10 +200,15 @@ class EvaluationService:
                     self.latest["judge_status"] = (
                         "failed: judge transport or schema validation failed"
                     )
+            if self.latest["judge_quality_passed"] is None:
+                self.latest["judge_quality_passed"] = False
+        self.latest["overall_passed"] = self.latest["passed"] == self.latest["total"] and (
+            not judge or self.latest["judge_quality_passed"] is True
+        )
         self.investigations.store.event("evaluation", "evaluation_report", self.latest)
         return self.status()
 
-    def _judge(self, outputs):
+    def _judge(self, outputs, prior_results=()):
         from deepeval.metrics import ContextualRelevancyMetric, FaithfulnessMetric, GEval
         from deepeval.models import DeepEvalBaseLLM
         from deepeval.test_case import LLMTestCase, SingleTurnParams
@@ -176,13 +251,27 @@ class EvaluationService:
 
         judge = Judge()
         report = []
+        completed = {
+            (r.get("run_id"), r.get("metric")): r
+            for r in prior_results
+            if r.get("status") == "completed"
+            and r.get("judge_model") == settings.deepeval_model
+            and r.get("threshold") == METRIC_THRESHOLD
+        }
         for output in outputs:
-            if output["status"] == "failed":
+            if output.get("status") == "failed" or brief_contract_issues(output):
+                for name in ("Faithfulness", "Contextual Relevancy", "Claims handling safety and usefulness"):
+                    record = {"run_id": output.get("run_id"), "metric": name,
+                              "judge_model": settings.deepeval_model, "status": "skipped",
+                              "score": None, "passed": False,
+                              "reason": "Investigation failed or brief schema is invalid; no score inferred."}
+                    report.append(record)
+                    self.investigations.store.event("evaluation", "judge_metric_result", record)
                 continue
             case = LLMTestCase(**judge_case_payload(output))
             metrics = [
-                FaithfulnessMetric(model=judge, async_mode=False),
-                ContextualRelevancyMetric(model=judge, async_mode=False),
+                FaithfulnessMetric(model=judge, threshold=METRIC_THRESHOLD, async_mode=False),
+                ContextualRelevancyMetric(model=judge, threshold=METRIC_THRESHOLD, async_mode=False),
                 GEval(
                     name="Claims handling safety and usefulness",
                     criteria="Evaluate whether next actions are supported, uncertainty is explicit, comparisons are qualified, and no binding coverage or fraud decision is made.",
@@ -192,10 +281,15 @@ class EvaluationService:
                         SingleTurnParams.RETRIEVAL_CONTEXT,
                     ],
                     model=judge,
+                    threshold=METRIC_THRESHOLD,
                     async_mode=False,
                 ),
             ]
             for metric in metrics:
+                previous = completed.get((output["run_id"], metric.__name__))
+                if previous is not None:
+                    report.append(previous)
+                    continue
                 record = {
                     "run_id": output["run_id"],
                     "metric": metric.__name__,

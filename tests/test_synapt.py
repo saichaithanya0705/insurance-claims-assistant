@@ -117,7 +117,36 @@ def test_live_retrieval_is_provider_scoped(monkeypatch, settings, claim):
     assert bundle.evidence[0].provider_id == "provider-1"
     assert calls[0][0] == "trident_get_chunks"
     assert calls[0][1]["provider_id"] == "provider-1"
-    assert len(calls) == 1
+    # One procedure query, then one claim-card query for semantic matching of similar cases.
+    assert len(calls) == 2
+    assert calls[1][1]["top_k"] == settings.synapt_case_top_k
+    assert calls[1][1]["query"].startswith("Historical claim card.")
+    assert bundle.semantic_claim_ids == []
+
+
+@pytest.mark.parametrize("claim_type", ["home", None])
+def test_procedure_query_uses_procedure_vocabulary_not_the_claim_narrative(
+    monkeypatch, settings, claim, claim_type
+):
+    """A narrative-bearing query embeds nearer to the ~20k claim cards than to any procedure, so the
+    top hits were cards (discarded) and some claims got no procedure. Measured against the live
+    provider: 8-9 of 10 hits were cards. The query must stay generic and free of the description."""
+    adapter = LiveSynaptAdapter(settings)
+    private = ClaimInput.model_validate(
+        claim.model_dump(mode="json")
+        | {"description": "Basement flooded after the storm; neighbour Dana Smith saw it.",
+           "claim_type": claim_type}
+    )
+    calls = stub_session(
+        monkeypatch, adapter, [tool()],
+        result([{"document_id": "doc-1", "text": "Request photos", "title": "Procedure"}]),
+    )
+    adapter.retrieve(private)
+    procedure_query = calls[0][1]["query"]
+    assert "procedure" in procedure_query.lower()
+    assert "flooded" not in procedure_query and "Dana" not in procedure_query
+    assert ("home" in procedure_query) == (claim_type == "home")
+    assert calls[1][1]["query"].startswith("Historical claim card.")
 
 
 @pytest.mark.parametrize(
@@ -339,11 +368,46 @@ def test_ingest_is_explicit_and_submission_is_not_completion(monkeypatch, settin
     assert response == {
         "status": "submitted",
         "req_id": "request-1",
+        "response_keys": ["req_id"],
         "extractionmode": "balanced",
         "completion_verified": False,
     }
     assert calls[0][1]["extractionmode"] == "balanced"
     assert len(calls) == 1
+
+
+def test_ingest_accepts_unrecognised_success_shape_but_rejects_errors(monkeypatch, settings):
+    ingest = Tool(
+        name="trident_ingest",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "provider_id": {"type": "string"},
+                "content": {"type": "string"},
+                "extraction_mode": {"type": "string"},
+            },
+            "required": ["provider_id"],
+        },
+    )
+    adapter = LiveSynaptAdapter(settings)
+    stub_session(
+        monkeypatch,
+        adapter,
+        [ingest],
+        CallToolResult(content=[], structuredContent={"accepted": True, "response": "queued"}),
+    )
+    accepted = asyncio.run(adapter.ingest("Document text", "cards.txt"))
+    assert accepted["req_id"] is None and accepted["response_keys"] == ["accepted", "response"]
+    assert accepted["completion_verified"] is False
+    failing = LiveSynaptAdapter(settings)
+    stub_session(
+        monkeypatch,
+        failing,
+        [ingest],
+        CallToolResult(content=[], structuredContent={"error": "quota exceeded"}),
+    )
+    with pytest.raises(SynaptError, match="rejected"):
+        asyncio.run(failing.ingest("Document text", "cards.txt"))
 
 
 def test_ingest_does_not_retry_ambiguous_failures(monkeypatch, settings):
@@ -395,8 +459,23 @@ def test_tool_error_does_not_expose_secret_server_text(monkeypatch, settings, cl
     assert "secret" not in str(exc.value) and "private-token" not in str(exc.value)
 
 
-def test_retrieval_enriches_chunks_with_procedures_and_graph(monkeypatch, settings, claim):
+def test_enrichment_is_off_by_default_so_no_uncitable_calls_or_standing_warning(
+    monkeypatch, settings, claim
+):
     adapter = LiveSynaptAdapter(settings)
+    calls = stub_session(
+        monkeypatch,
+        adapter,
+        [tool(), tool("trident_get_procedures"), tool("trident_search")],
+        {"trident_get_chunks": result([{"source_id": "doc", "text": "Policy excerpt"}])},
+    )
+    bundle = adapter.retrieve(claim)
+    assert {name for name, _ in calls} == {"trident_get_chunks"}
+    assert not any("Optional Synapt" in warning for warning in bundle.warnings)
+
+
+def test_retrieval_enriches_chunks_with_procedures_and_graph(monkeypatch, settings, claim):
+    adapter = LiveSynaptAdapter(settings.model_copy(update={"synapt_graph_enrichment": True}))
     calls = stub_session(
         monkeypatch,
         adapter,
@@ -429,11 +508,13 @@ def test_retrieval_enriches_chunks_with_procedures_and_graph(monkeypatch, settin
         "trident_get_procedures",
         "trident_search",
     }
-    assert bundle.warnings == []
+    assert bundle.warnings == [
+        "No ingested historical claim cards matched; semantic ranking was not applied."
+    ]
 
 
 def test_optional_unsourced_graph_cannot_become_evidence(monkeypatch, settings, claim):
-    adapter = LiveSynaptAdapter(settings)
+    adapter = LiveSynaptAdapter(settings.model_copy(update={"synapt_graph_enrichment": True}))
     stub_session(
         monkeypatch,
         adapter,
@@ -502,7 +583,37 @@ def test_query_only_runs_when_no_source_evidence_available(monkeypatch, settings
     )
     bundle = adapter.retrieve(claim)
     assert bundle.evidence[0].source_id == "query-doc"
-    assert [name for name, _ in calls] == ["trident_get_chunks", "trident_query"]
+    assert [name for name, _ in calls] == [
+        "trident_get_chunks",
+        "trident_query",
+        "trident_get_chunks",  # claim-card query for semantic matching
+    ]
+
+
+def test_claim_cards_rank_similar_cases_but_are_never_cited_evidence(monkeypatch, settings, claim):
+    adapter = LiveSynaptAdapter(settings)
+    card = "claim_ref: claimref_aaaaaaaabc\nauto claim in region regionkey_ac. Amount band 5,000-10,000"
+    other = "claim_ref: claimref_aaaaaaaade\nauto claim in region regionkey_ag."
+    lesson = "handler_lesson_ref: LESSON-1\nhandler_note: ask for the police report"
+    sop = "For an auto claim request an incident statement and repair estimate."
+    stub_session(
+        monkeypatch,
+        adapter,
+        [tool()],
+        result(
+            [
+                {"chunk_id": "chunk-card", "text": card + "\n" + other},
+                {"chunk_id": "chunk-lesson", "text": lesson},
+                {"chunk_id": "chunk-sop", "text": sop},
+            ]
+        ),
+    )
+    bundle = adapter.retrieve(claim)
+    # Cards -> semantic ranking in order of appearance (aliases decode to dataset claim IDs).
+    assert bundle.semantic_claim_ids == ["CLM-0000000012", "CLM-0000000034"]
+    # Cards and lessons are not cited as sources; the procedure passage is.
+    assert [e.source_id for e in bundle.evidence] == ["chunk-sop"]
+    assert not any("claim_ref" in w for w in bundle.warnings)
 
 
 def test_beta_result_wrapper_preserves_chunk_identity(settings):
@@ -560,3 +671,117 @@ def test_runtime_verification_requires_evidence_and_resets(monkeypatch, settings
     with pytest.raises(SynaptError):
         adapter.retrieve(claim)
     assert not adapter.live_verified
+
+
+def status_error(code, **headers):
+    request = httpx.Request("POST", "https://beta.example/auth")
+    response = httpx.Response(code, headers=headers, request=request)
+    return httpx.HTTPStatusError("rejected", request=request, response=response)
+
+
+def test_one_login_serves_many_calls_until_the_token_expires(monkeypatch, settings):
+    adapter = LiveSynaptAdapter(settings)
+    logins = []
+
+    async def auth():
+        logins.append(1)
+        adapter._token_lifetime = 3600
+        return f"token-{len(logins)}"
+
+    monkeypatch.setattr(adapter, "_authenticate", auth)
+
+    async def run():
+        return [await adapter._bearer() for _ in range(5)]
+
+    assert asyncio.run(run()) == ["token-1"] * 5 and len(logins) == 1
+    adapter._token = ("token-1", 0.0)  # expired long ago
+    assert asyncio.run(adapter._bearer()) == "token-2" and len(logins) == 2
+
+
+def test_token_lifetime_uses_the_servers_value_with_a_safety_margin(monkeypatch, settings):
+    import time
+
+    adapter = LiveSynaptAdapter(settings)
+
+    async def auth():
+        adapter._token_lifetime = 100
+        return "token"
+
+    monkeypatch.setattr(adapter, "_authenticate", auth)
+    asyncio.run(adapter._bearer())
+    assert 38 < adapter._token[1] - time.monotonic() <= 40  # 100 s minus a 60 s margin
+
+    async def unstated():
+        adapter._token_lifetime = None
+        return "token"
+
+    adapter._token = None
+    monkeypatch.setattr(adapter, "_authenticate", unstated)
+    asyncio.run(adapter._bearer())
+    assert 200 < adapter._token[1] - time.monotonic() <= 240  # short default when unstated
+
+
+def test_authentication_records_the_servers_stated_lifetime(settings):
+    adapter = LiveSynaptAdapter(settings)
+
+    def handler(request):
+        return httpx.Response(
+            200, json={"access_token": "opaque", "token_type": "Bearer", "expires_in": 1800}
+        )
+
+    real = httpx.AsyncClient
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            "claims.adapters.httpx.AsyncClient",
+            lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+        )
+        assert asyncio.run(adapter._authenticate()) == "opaque"
+    assert adapter._token_lifetime == 1800
+
+
+def test_a_rejected_token_is_dropped_and_retried_once(settings):
+    adapter = LiveSynaptAdapter(settings)
+    adapter._token = ("stale", 10**12)
+    calls = []
+
+    async def operation():
+        calls.append(adapter._token)
+        if len(calls) == 1:
+            raise status_error(401)
+        return "ok"
+
+    assert asyncio.run(adapter._retry(operation)) == "ok"
+    assert calls[0] is not None and calls[1] is None  # cache cleared before the retry
+
+
+def test_rate_limited_logins_wait_as_the_server_asks(monkeypatch, settings):
+    adapter = LiveSynaptAdapter(settings)
+    delays, outcomes = [], iter([status_error(429, **{"Retry-After": "7"}), status_error(429), None])
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr("claims.adapters.asyncio.sleep", fake_sleep)
+
+    async def operation():
+        failure = next(outcomes)
+        if failure:
+            raise failure
+        return "ok"
+
+    assert asyncio.run(adapter._retry(operation, attempts=3)) == "ok"
+    assert delays == [7.0, 4.0]  # honours Retry-After, then backs off exponentially
+
+
+@pytest.mark.parametrize("code", [400, 403, 404])
+def test_other_client_errors_are_not_retried(settings, code):
+    adapter = LiveSynaptAdapter(settings)
+    attempts = []
+
+    async def operation():
+        attempts.append(1)
+        raise status_error(code)
+
+    with pytest.raises(SynaptError):
+        asyncio.run(adapter._retry(operation))
+    assert len(attempts) == 1

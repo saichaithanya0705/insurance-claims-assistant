@@ -1,5 +1,7 @@
 # Synapt Claims Investigator — UI, usability and workspace design review
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 **Reviewed:** 6 October 2026, Asia/Kolkata  
 **Application:** http://localhost:8000/  
 **Scope:** Current React UI, first use, intake, saved-case discovery, investigation results, evidence, keyboard interaction, responsive layout, and alternative product designs.  

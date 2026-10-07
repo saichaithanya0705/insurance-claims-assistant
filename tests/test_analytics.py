@@ -7,7 +7,13 @@ from pathlib import Path
 import httpx
 import pytest
 
-from claims.analytics import FEATURES, AnalyticsService, feature_dict, temporal_split
+from claims.analytics import (
+    FEATURES,
+    AnalyticsService,
+    calibration_roles,
+    feature_dict,
+    temporal_split,
+)
 from claims.models import ClaimInput
 
 
@@ -234,3 +240,154 @@ def test_failed_download_does_not_write_partial_sample(tmp_path, monkeypatch):
     with pytest.raises(httpx.HTTPStatusError):
         module["fetch_sample"](output, count=100)
     assert not output.exists()
+
+
+def test_explanations_state_direction_not_just_importance(service):
+    report = service.train()
+    explanation = report["metrics"]["amount"]["global_explanation"]
+    effects = {e["feature"]: e for e in explanation["effects"]}
+    kind = effects["claim_type"]
+    # In the test data auto claims are $7,000 larger than home claims.
+    assert kind["kind"] == "categorical" and kind["direction"] == "varies_by_category"
+    assert kind["highest"]["value"] == "auto" and kind["lowest"]["value"] == "home"
+    assert kind["highest"]["mean_prediction"] > kind["lowest"]["mean_prediction"] + 3000
+    assert [p["value"] for p in kind["points"]] == ["auto", "home"]  # two categories, no repeats
+    assert any(
+        line.startswith("claim type: highest predicted claim amount (USD) for auto")
+        and "lowest for home" in line
+        for line in explanation["summary"]
+    )
+    assert "not causal" in explanation["effects_method"]
+    # A feature with no real effect is not presented as a finding.
+    assert effects["deductible"]["direction"] == "little_effect"
+    assert not any(line.startswith("deductible") for line in explanation["summary"])
+    for task in ("amount", "resolution", "fraud"):
+        for effect in report["metrics"][task]["global_explanation"]["effects"]:
+            assert effect["direction"] in {
+                "higher_values_increase",
+                "higher_values_decrease",
+                "non_monotonic",
+                "varies_by_category",
+                "little_effect",
+            }
+
+
+def test_each_prediction_explains_what_moved_it_from_a_typical_claim(service):
+    service.train()
+    result = service.predict(claim())
+    for task, unit in (("amount", "USD"), ("resolution", "days"), ("fraud", "score")):
+        local = result[task]["local_explanation"]
+        assert local["unit"] == unit and "not additive or causal" in local["method"]
+        effects = [c["effect"] for c in local["contributions"]]
+        assert effects == sorted(effects, key=abs, reverse=True) and len(effects) <= 6
+        for item in local["contributions"]:
+            assert item["value"] != item["typical_value"]
+    # Previous-claims history is the only thing changed: its contribution must be reported.
+    changed = service.predict(claim().model_copy(update={"previous_claims_count": 4}))
+    assert changed["fraud"]["local_explanation"] != result["fraud"]["local_explanation"]
+
+
+def test_artifacts_trained_before_local_explanations_still_predict(service):
+    service.train()
+    for trained in service._bundle["models"].values():
+        trained.pop("reference")
+    result = service.predict(claim())
+    assert result["available"] and result["amount"]["local_explanation"] is None
+
+
+def test_calibration_decisions_use_disjoint_dates_and_policies():
+    rows = sample_rows(100)
+    rows[0]["policy_id"] = rows[-1]["policy_id"]
+    rows[60]["policy_id"] = rows[-2]["policy_id"]
+    groups, boundaries = calibration_roles(rows)
+    assert max(r["claim_filed_date"] for r in groups[0]) < boundaries[0]
+    assert min(r["claim_filed_date"] for r in groups[1]) >= boundaries[0]
+    assert max(r["claim_filed_date"] for r in groups[1]) < boundaries[1]
+    assert min(r["claim_filed_date"] for r in groups[2]) >= boundaries[1]
+    policies = [{r["policy_id"] for r in group} for group in groups]
+    assert not policies[0] & (policies[1] | policies[2])
+    assert not policies[1] & policies[2]
+
+
+def test_test_outcomes_cannot_choose_model_or_interval(service):
+    partitions, split = temporal_split(sample_rows())
+    trained, metrics = service._fit_task("amount", partitions, split)
+    changed = [
+        partitions[0],
+        partitions[1],
+        [{**row, "claim_amount": row["claim_amount"] * 100} for row in partitions[2]],
+    ]
+    changed_trained, changed_metrics = service._fit_task("amount", changed, split)
+    assert metrics["selected_model"] == changed_metrics["selected_model"]
+    assert metrics["candidate_selection_maes"] == pytest.approx(
+        changed_metrics["candidate_selection_maes"], abs=1e-8
+    )
+    assert trained["radius"] == pytest.approx(changed_trained["radius"], abs=1e-8)
+    assert metrics["mae"] != changed_metrics["mae"]
+
+
+def test_selected_model_is_refit_on_selection_rows_and_hgb_uses_temporal_tail(service):
+    partitions, split = temporal_split(sample_rows())
+    trained, metric = service._fit_task("amount", partitions, split)
+    assert metric["refit_rows"] == len(partitions[0]) + metric["calibration_roles"]["selection"]
+    model = trained["model"]
+    # The final fit is deliberately fixed-iteration: random internal validation is
+    # not allowed after model selection.
+    assert getattr(model, "early_stopping", None) is False
+
+
+def test_amount_selection_includes_claim_type_median_candidate(service):
+    partitions, split = temporal_split(sample_rows())
+    _, metric = service._fit_task("amount", partitions, split)
+    assert "claim_type_median" in metric["candidate_selection_maes"]
+
+
+def test_constant_regression_target_prefers_simple_baseline(service):
+    rows = [{**row, "claim_amount": 1200} for row in sample_rows()]
+    partitions, split = temporal_split(rows)
+    _, metrics = service._fit_task("amount", partitions, split)
+    assert metrics["selected_model"] == "median_baseline"
+    assert metrics["mae"] == 0
+
+
+def test_fraud_metrics_disclose_imbalanced_baseline(service):
+    report = service.train()
+    metric = report["metrics"]["fraud"]
+    assert 0 <= metric["balanced_accuracy"] <= 1
+    assert metric["majority_accuracy"] > 0.5
+    assert set(metric["calibration_roles"]) == {"selection", "uncertainty", "threshold"}
+    assert "prior_baseline" in metric["candidate_selection_scores"]
+
+
+def test_fraud_test_labels_cannot_select_weights_or_review_threshold(service):
+    partitions, split = temporal_split(sample_rows())
+    trained, metric = service._fit_task("fraud", partitions, split)
+    changed = [partitions[0], partitions[1], [
+        {**row, "is_fraud_flagged_ground_truth": not row["is_fraud_flagged_ground_truth"]}
+        for row in partitions[2]
+    ]]
+    other, changed_metric = service._fit_task("fraud", changed, split)
+    assert metric["selected_model"] == changed_metric["selected_model"]
+    assert metric["candidate_selection_scores"].keys() == changed_metric["candidate_selection_scores"].keys()
+    for name, scores in metric["candidate_selection_scores"].items():
+        # Parallel forest reductions may differ in the last floating-point bit.
+        # Assert outcome isolation at a tight tolerance instead of bit identity.
+        assert scores == pytest.approx(changed_metric["candidate_selection_scores"][name], abs=1e-12, rel=0)
+    assert trained["threshold"] == pytest.approx(other["threshold"])
+    for name, point in metric["threshold_cohort_operating_points"].items():
+        other_point = changed_metric["threshold_cohort_operating_points"][name]
+        if point is None:
+            assert other_point is None
+        else:
+            assert point == pytest.approx(other_point, abs=1e-12, rel=0)
+    assert metric["recall"] != changed_metric["recall"]
+
+
+def test_independent_holdout_reconstruction_and_feature_aware_baselines(service):
+    service.train()
+    module = runpy.run_path(str(Path(__file__).parents[1] / "scripts/retrain_models.py"))
+    verified = module["verify_holdout"](service)
+    assert all(task["stored_metric_matches"] for task in verified["tasks"].values())
+    assert verified["tasks"]["amount"]["feature_aware_baseline"]["mae"] >= 0
+    assert verified["tasks"]["resolution"]["feature_aware_baseline"]["mae"] >= 0
+    assert set(verified["tasks"]["amount"]["claim_type_cohorts"]) == {"auto", "home"}

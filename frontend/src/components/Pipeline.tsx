@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { Check, Database, Gauge, ListChecks, Microscope, ShieldCheck, Tags, UserCheck } from 'lucide-react'
+import { Check, Database, Gauge, ListChecks, Microscope, Scale, ShieldCheck, Tags, UserCheck } from 'lucide-react'
 import { cx } from '../lib/format'
 
 export const STAGES = [
@@ -9,6 +9,7 @@ export const STAGES = [
   { key: 'risk', name: 'Risk', icon: Gauge, blurb: 'Separating queue policy from statistical estimates' },
   { key: 'recommend', name: 'Recommend', icon: ListChecks, blurb: 'Preparing cited handler actions' },
   { key: 'validate', name: 'Validate', icon: ShieldCheck, blurb: 'Checking citations and decision boundaries' },
+  { key: 'judge', name: 'Judge', icon: Scale, blurb: 'Independent model reviews grounding and boundaries' },
   { key: 'review', name: 'Review', icon: UserCheck, blurb: 'Waiting for a handler' },
 ] as const
 

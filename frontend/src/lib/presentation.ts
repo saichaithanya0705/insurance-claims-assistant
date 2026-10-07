@@ -6,11 +6,16 @@ export function claimSnapshot(claim: ClaimInput) {
 }
 
 export function comparisonSnapshot(item: SimilarCase) {
-  return { case_id: item.claim_id, claim_type: item.claim_type, state: item.state, claimed_amount: item.claim_amount, historical_outcome: item.claim_status, resolution_days: item.days_to_resolution, rank_score: item.similarity_score, score_meaning: 'Retrieval rank score; not a probability', match_reasons: item.match_reasons?.map(readable), differences: item.differences?.map(readable) }
+  return { case_id: item.claim_id, claim_type: item.claim_type, state: item.state, claimed_amount: item.claim_amount, deductible: item.deductible, previous_claims: item.previous_claims_count, policyholder_tenure_years: item.policyholder_tenure_years, historical_outcome: item.open_case ? `${item.claim_status} (no final outcome)` : item.claim_status, resolution_days: item.days_to_resolution, dataset_fraud_flag: item.dataset_fraud_flag == null ? 'not recorded' : item.dataset_fraud_flag ? 'flagged (synthetic label, not proof)' : 'not flagged', rank_score: item.similarity_score, score_meaning: 'Retrieval rank score; not a probability', match_reasons: item.match_reasons?.map(readable), differences: item.differences?.map(readable) }
 }
 
 export function provenanceLabel(provenance: string) {
-  return provenance === 'user_input' ? 'Claimant report' : provenance.includes('synthetic') ? 'Synthetic comparison material' : 'Retrieved source'
+  return provenance === 'user_input' ? 'Claimant report' : provenance === 'handler_lesson' ? 'Reviewed handler lesson' : provenance.includes('synthetic') ? 'Synthetic comparison material' : 'Retrieved source'
+}
+
+/** Plain-language label for a feature-effect direction (associations, never causes). */
+export function directionLabel(direction: string) {
+  return ({ higher_values_increase: 'Larger values → higher estimate', higher_values_decrease: 'Larger values → lower estimate', non_monotonic: 'No steady direction', varies_by_category: 'Differs by category', little_effect: 'Little effect' } as Record<string, string>)[direction] ?? direction
 }
 
 export function readable(text: string) {

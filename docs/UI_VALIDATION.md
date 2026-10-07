@@ -1,5 +1,7 @@
 # UI validation - 2026-10-06
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 The professional light theme preserves the user's React layout. Warm neutrals, borders and clear
 semantic states replace glow, gradients, glass, decorative orbit/pulsing branding and animated numbers.
 Design references and alternatives are recorded in CHANGE_DECISIONS.md.

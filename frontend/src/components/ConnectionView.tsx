@@ -113,7 +113,7 @@ export function ConnectionView({ health, onHealthRefresh }: { health: Health | n
             </span>
             Service architecture
           </h2>
-          <span className="step-tag">REQUEST FLOW</span>
+          <span className="step-tag">Request flow</span>
         </div>
         <div className="card-body" style={{ overflowX: 'auto' }}>
           <svg className="arch" viewBox="0 0 780 300" role="img" aria-label="Request flow: browser to application service to investigation workflow, which retrieves evidence, prepares the brief, compares history and estimates outcomes" style={{ minWidth: 640 }}>
@@ -170,7 +170,9 @@ export function ConnectionView({ health, onHealthRefresh }: { health: Health | n
                       ['Credentials', status.credentials_configured ? 'Configured' : 'Not set', status.credentials_configured ? 'teal' : 'amber'],
                       ['Live verified', status.live_verified ? 'Yes' : 'No', status.live_verified ? 'teal' : 'amber'],
                       ['History origin', label(status.local_history_origin), status.local_history_origin === 'published_synthetic_dataset' ? 'teal' : 'amber'],
+                      ['History rows', status.history_rows ? status.history_rows.toLocaleString('en-US') : 'Sample only', status.history_rows ? 'teal' : 'amber'],
                       ['Brief preparation', label(health?.agent_mode), health?.agent_mode === 'live' ? 'teal' : 'violet'],
+                      ['Independent judge', status.judge_mode === 'inline' ? 'On' : 'Off', status.judge_mode === 'inline' ? 'teal' : 'violet'],
                     ] as const
                   ).map(([k, v, tone]) => (
                     <div className="status-tile" key={k}>

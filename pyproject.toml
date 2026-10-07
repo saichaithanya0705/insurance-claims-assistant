@@ -4,11 +4,20 @@ version = "0.1.0"
 description = "Evidence-led claims investigation with LangGraph and Synapt"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-  "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "pydantic-settings>=2.6,<3",
-  "langgraph>=1.0,<2", "langgraph-checkpoint-sqlite>=2,<4",
-  "httpx>=0.28,<1", "mcp>=1.20,<2",
-  "scikit-learn>=1.6,<2", "joblib>=1.4,<2",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "pydantic-settings>=2.6,<3",
+  "langgraph>=1.0,<2",
+  "langgraph-checkpoint-sqlite>=2,<4",
+  "httpx>=0.28,<1",
+  "mcp>=1.20,<2",
+  "scikit-learn>=1.6,<2",
+  "threadpoolctl>=3,<4",
+  "joblib>=1.4,<2",
   "jsonschema>=4.23,<5",
+  "duckdb>=1.5.6",
+  "huggingface-hub>=0.30,<2",
+  "catboost>=1.2,<2",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +32,8 @@ dev = ["pytest>=8,<10", "ruff>=0.9,<1"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# scikit-learn emits one benign threading notice per forest prediction from a thread pool.
+filterwarnings = ["ignore:.*sklearn.utils.parallel.delayed.*:UserWarning"]
 
 [tool.ruff]
 target-version = "py311"

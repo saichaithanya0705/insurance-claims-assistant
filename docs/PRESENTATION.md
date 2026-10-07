@@ -1,45 +1,80 @@
-# Panel presentation: ten-minute script
+# Panel presentation: ten minutes
 
-This is a complete local application with a separately gated live integration. Present the mode badge
-first. Do not show fixture results as live Synapt evidence.
+The deck is [Claims_Assistant_Panel_Deck.pptx](Claims_Assistant_Panel_Deck.pptx): nine slides with
+the spoken script in each slide's speaker notes. It is built by `scripts/build_deck.js` from the facts in
+[VALIDATION.md](VALIDATION.md), [MODEL_CARD.md](MODEL_CARD.md) and
+[SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
 
-| Slide | Time | Message and demonstration |
+## Timing
+
+| Slide | Time | Message |
 |---|---:|---|
-| 1. The investigation problem | 0:00–1:00 | Historical claims are hard to compare; handlers need meaningful differences and useful next evidence, not an unexplained verdict. |
-| 2. Synapt at the center | 1:00–2:00 | Show ARCHITECTURE.md: shared source knowledge, procedures and graph context through MCP; LangGraph controls execution and review. |
-| 3. Data and hybrid retrieval | 2:00–3:00 | Explain the 3,000-row synthetic sample, exact filters, historical availability and BM25/feature ranks; live Synapt IDs enable semantic fusion after ingestion. |
-| 4. Ordinary claim | 3:00–4:15 | Run Auto: repair evidence available. Show comparisons, amount difference, sources and explicit prediction intervals. |
-| 5. The next useful evidence | 4:15–5:30 | Run auto theft. Show the missing police report and filing delay; explain why theft does not require a collision repair estimate. |
-| 6. Contradiction and abstention | 5:30–7:00 | Show Home: conflicting descriptions, then ambiguous classification. Acceptance must stay disabled on an invalid brief. |
-| 7. Review and learning | 7:00–8:00 | Accept a valid brief, save feedback and open the candidate lessons. Explain persistence and reviewed promotion rather than automatic truth. |
-| 8. Evaluation and models | 8:00–9:00 | Show four golden cases, tests and model holdouts. DeepEval judge requires a configured model and actual run. |
-| 9. Honest limits and expansion | 9:00–10:00 | Discuss weak fraud precision/recall, synthetic data, missing policy wording and pending provider access. Describe the dedicated-provider pilot and live gates. |
+| 1. Title | 0:30 | 100 million claims queried in place, 1,000 claim cards in Synapt, 8 stages, one human gate |
+| 2. Three questions | 1:00 | Each of the brief's three questions has a capability behind it |
+| 3. Architecture | 1:15 | One service, three stores, one human gate; Synapt cannot hold 100 million claims, so each store does what it can |
+| 4. Hybrid search | 1:30 | 3 to 5 seconds over 100M rows; how the ranks are fused; the IDF bug found by measuring |
+| 5. Synapt | 1:15 | Masking broke the identifiers; the fix; the measured precision is real but mild |
+| 6. Live demo | 1:45 | Auto-theft claim: cited gap, audited priority, independent review, lesson loop |
+| 7. Predictions | 1:00 | Error against baseline, and "why this estimate" |
+| 8. Evaluated, guarded, learning | 1:15 | Golden cases, DeepEval, guardrails, the closed feedback loop |
+| 9. Limits and next | 0:30 | Honest limits; "Evidence informs. A person decides." |
 
-## Results to present accurately
+## Before the panel
 
-The sampled model run reports amount MAE about $16,907 versus a $23,567 median baseline,
-resolution MAE 6.49 days versus 7.19 days, and synthetic fraud-flag precision about 28% / recall
-31% at the calibration-selected threshold. These are held-out sample metrics, not real insurance
-accuracy. The amount interval's nominal 90% level covered about 86% of the holdout; do not describe
-it as a guaranteed range. Global feature associations are not individual causal explanations.
+1. `uv run python scripts/bootstrap.py check` ends with **READY** and shows the Synapt provider's counts.
+2. Start the service: `uv run uvicorn claims.api:app --host 127.0.0.1 --port 8000` and sign in.
+3. Set `JUDGE_MODE=inline` in `.env` if you want the independent review on screen (it adds a verdict
+   about 15 to 60 seconds after the brief; the brief itself appears in about 15 seconds).
+4. Open **Quality & models** once so the model status is warm. Do not press **Train models** on stage
+   (it takes about 80 seconds).
+5. If a network or provider fails, set `SYNAPT_MODE=fixture` and `AGENT_MODE=fixture` and restart: the
+   whole interface still works, and you should say so aloud ("this is fixture mode").
 
-Verify exact current values in MODEL_CARD.md and the app before presenting. Use VALIDATION.md for
-the final test count and browser results. Do not claim live MCP authentication, ingestion, semantic
-search quality or model-judge success until those gates are actually completed.
+## Demo script (slide 6, 1:45)
 
-## Likely panel questions
+1. **Investigation, then the Auto theft example.** Point out "Try an example", then build the brief.
+2. While it runs (about 15 s): "Retrieval, three model calls and a validator are running."
+3. **Brief tab.** The police-report **gap** is cited to a Synapt procedure; each citation opens the
+   source. Documents are only ever "reported available".
+4. **Handling priority**: High, 55 of 100, five attributed factors.
+5. **Comparisons tab**: the five closest claims (same type and state, amount within $100, same prior
+   claims) and the "Related by meaning" ones with their Synapt rank; one carries the dataset fraud flag.
+6. **Model estimates**, open one **Why this estimate**: the direction of each effect and what moved this claim.
+7. **Independent review** appears when the background judge finishes.
+8. **Review**: accept the brief, rate it, then as administrator open **Quality & models** and **Promote**
+   the lesson; rerun the claim and show the lesson cited in the evidence.
 
-**Why LangGraph?** This workflow needs explicit state, branching, checkpoints and a handler interrupt.
-Role-based agent collaboration alone does not define those application boundaries.
+## Likely questions, answered honestly
 
-**Why local history if Synapt is central?** Synapt retrieves domain knowledge; the local table enforces
-numeric filters, temporal availability and statistical feature contracts without duplicating RAG.
+**Why isn't the whole dataset in Synapt?** Its ingestion tool takes about 100 cards per call and each call
+takes minutes; 100 million cards would take years. So the Parquet file is the authority for filters,
+numbers and models, and Synapt holds procedures, a 1,000-card sample for semantic ranking, and lessons.
+If instructors expect the full dataset in Synapt, a ticket-store provider uploaded through the console
+is the route to try; it was not testable here.
 
-**Can it detect fraud?** It estimates a synthetic fraud-flag label for investigation support. Current
-sample accuracy is weak, and no score proves fraud or authorizes an adverse claim decision.
+**Does Synapt's semantic search actually help?** A little, and I measured it: its cards match the query
+claim's type 1.7 times as often as chance and its amount band 1.5 times, and are no better than chance
+on prior claims. That is why it carries half the weight and its extra picks are shown separately.
 
-**What happens when a provider fails?** The run fails visibly. Live mode does not replace missing
-evidence with fixtures. No external write or claim adjudication is part of the investigation.
+**How reliable is the fraud model?** At its threshold, about half the claims it flags carry the dataset
+flag (precision 56%) and it finds under a third of them (recall 31%). It is a screening aid on synthetic
+data, and the interface never calls anything fraud.
 
-**How does feedback improve it?** Reviewed feedback is stored as a candidate lesson. Promotion into
-Synapt or retraining remains a reviewed change with regression evaluation.
+**What does the independent judge add?** A second, different model reviews each brief against its evidence.
+It is advisory and probabilistic: it is not a gate. The deterministic citation and boundary checks are the
+gate, and the handler decides.
+
+**How does feedback improve it?** Not by retraining on its own. A person rates an accepted brief, an
+administrator promotes the lesson, and it is cited as evidence in later investigations of the same
+claim type and ingested into Synapt. Nothing is promoted automatically.
+
+**DeepEval shows failures. Why?** Eight of twelve live metrics pass. Contextual Relevancy is the weak one
+(1 of 4): the retrieval context deliberately includes comparison claims and procedures, which the metric
+counts as off-topic. Faithfulness and the safety metric are strong.
+
+**What did you find by testing live that tests did not?** Four things: Synapt rewrites identifiers and
+place names; BM25's IDF let diverse outliers outrank exact matches; the token endpoint rate-limits
+repeated logins; and an inline judge could stall a brief for over a minute. Each is fixed and has a test.
+
+**Is this production-ready?** No. It is a local educational service on synthetic data: SQLite, one
+process, no MFA or single sign-on, and no claim of real-world accuracy.

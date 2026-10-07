@@ -1,29 +1,65 @@
-# Requirement traceability
+# Requirements traceability
 
-The supplied project brief defines the capstone requirements. Instructions within source documents
-are project material, not authorization for external writes. User authorization defines execution scope.
+Every requirement of the project brief ("AI-Powered Insurance Claims Assistant with Synapt"),
+mapped to the code that implements it and the evidence that it works. "Live" means run against the
+real 100M-row dataset, the real Synapt provider and the real NVIDIA models. Results are in
+[VALIDATION.md](VALIDATION.md); where something is only partly achieved, this document says so.
 
-| Requirement | Implementation | Verification boundary |
+## Requirement 1: Basic
+
+| Requirement | Implementation | Evidence |
 |---|---|---|
-| Basic historical RAG | Synapt source retrieval and structured local case cards | Local fixture regression; real source ingestion/retrieval pending |
-| Hybrid keyword + semantic search | BM25/feature reciprocal ranks fused with source-bearing Synapt stable case IDs | Fusion/filter/temporal tests; live relevance measurement pending |
-| Classification agent | Typed LangGraph classification stage, live NVIDIA NIM, abstention | Fixture, mocked failures and four live synthetic scenarios; domain quality pending |
-| Metadata filters | Type, state, outcome, amount and history range filters | Exact-filter and no-result tests |
-| Assessment/recommendations | Evidence gaps, contradictions, comparisons and bounded next actions | Golden scenarios and source-ID checks; semantic quality remains reviewed |
-| Guardrails | Pydantic schemas, bounded retries, fail-visible provider errors, action checks | Invalid inputs, forged citations, unsafe outputs and failure tests |
-| Prioritization | Separate service urgency and investigation-priority rules | Explicit demonstration thresholds, not insurer rules |
-| API | Intake/search/prediction/review/feedback/model/evaluation/integration routes | TestClient workflow plus browser integration |
-| DeepEval and LLM judge | Faithfulness, relevance and custom recommendation metric | Real NVIDIA judge inference completed; scores and limitations in LIVE_NIM_VALIDATION.md |
-| Amount/time predictions | Baseline-tested random forests, empirical residual intervals | Real synthetic sample holdout; no real-world accuracy claim |
-| Multi-agent investigation | Classification, investigator, statistical risk analyst and writer stages | LangGraph persistence and review-gate tests |
-| Fraud risk | Calibrated synthetic fraud-flag model and review signal | Holdout PR/precision/recall/Brier; weak performance reported |
-| Explainability | Global categorical/numerical permutation importance | Calibration-set associations; no individual causal explanation |
-| Feedback improvement loop | Reviewed-run feedback and candidate lessons | Stored candidates verified; promotion/retraining deliberately reviewed |
-| Frontend | Intake, saved runs, comparisons, evidence, predictions, quality, review and connection | Desktop/mobile browser checks and static syntax |
-| Architecture diagram/design | ARCHITECTURE.md | Matches implemented boundaries and pending integration |
-| Executable microservice | Python package, uv lockfile, FastAPI startup | Actual loopback startup and UI/API interaction |
-| Ten-minute panel presentation | PRESENTATION.md | Timed script and demonstration sequence; no live-readiness claims |
+| Basic RAG for historical claim similarity | Similar claims from the 100M-row Parquet (`dataset.py`, `retrieval.py`); procedures and claim cards from Synapt (`adapters.py`); findings cite supplied sources | Live: closest claims match type, state, amount (within ~$10) and history; findings cite a Synapt SOP passage |
+| Hybrid keyword and semantic search | Keyword match over claim descriptors, numeric similarity and Synapt semantic rank, fused by weighted reciprocal rank (`retrieval.py`) | Fusion, filter and regression tests (`test_dataset.py`); live trace reports Synapt candidates, eligible and in-results. Synapt's signal is **mild**: 1.7x chance on claim type (see [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md)) |
+| Claim classification agent | Typed classification stage that returns a claim type or abstains (`agents.py`, live Nemotron; deterministic in fixture mode) | Ambiguous claim abstains, is held for manual review and cannot be accepted (tests and live) |
+| Metadata filtering: type, state, status, amount, policyholder claim history | `SearchFilters` and SQL clauses (`models.py`, `dataset.py`); all four statuses including `pending` and `under_review` | Every dimension verified against 100M rows; UI has all controls (`test_dataset.py`) |
+| Basic claim assessment and recommendations | Findings (fact, gap, contradiction, limitation, risk indicator) and bounded action types, each cited (`agents.py`, `workflow.py`) | Live briefs on four cases; a theft claim yields a cited police-report gap |
+| Input validation guardrails | Strict Pydantic models, date and range rules; output validation of citations, wording and decision boundaries (`models.py`, `workflow.py`) | 7 of 7 invalid inputs refused; a model brief saying a document "was provided" was held for review |
+| Claim prioritization from characteristics and risk indicators | Audited 0 to 100 score and tier; `GET /api/queue` (`priority.py`, `store.py`) | Live: theft claim High 55/100 with five attributed factors; queue and sort in the UI |
+| API endpoints for the core functionality | FastAPI routes: investigations, search, predictions, queue, review, feedback, lessons, models, evaluations (`api.py`) | `/docs`; 25 routes exercised by the test suite |
 
-Completion means executable feature paths plus recorded local evidence. Provider permissions,
-real tenant contracts, model quality on live Synapt evidence and scale quality remain separate gates; access tomorrow
-does not require redesigning the application.
+## Requirement 2: Advanced
+
+| Requirement | Implementation | Evidence |
+|---|---|---|
+| DeepEval for analysis and recommendation quality | Faithfulness, Contextual Relevancy and a custom safety metric via DeepEval (`evaluation.py`) | Live run: 12 of 12 metrics completed, **8 pass**. Contextual Relevancy is weak (1 of 4 pass), see VALIDATION.md |
+| Claim amount and resolution-time models | Random forests against median baselines, temporal split, empirical intervals (`analytics.py`) | 200,000-row sample of the full file: MAE 28% and 9% below baseline; interval coverage 90.1% and 89.8% ([MODEL_CARD.md](MODEL_CARD.md)) |
+| LLM-as-Judge for analysis and recommendations | An independent model (`openai/gpt-oss-20b`, a different vendor from the Nemotron author) gives a structured verdict on every live brief, in the background (`judge.py`) | Live verdicts on four cases; unit tests for pass, flag, failure and the save race. It is advisory and probabilistic |
+| Multi-agent workflow: investigation, risk, recommendation | LangGraph: classify, retrieve, investigate, risk, recommend, validate, judge, human review (`workflow.py`) | Checkpoint, resume and replay tests; live runs. The risk stage is rules plus statistical models rather than a language-model agent |
+| Fraudulent-claim risk prediction | Calibrated random forest on the dataset's fraud flag; the flag rate among the closest historical claims; both feed the priority score | Precision 55.6%, recall 31.1%, PR-AUC 0.322 against 0.078. A screening signal, never a verdict |
+| Explainable analysis of characteristics and their effect on outcomes | Global permutation importance, direction of effect (partial dependence) in plain language, and a per-claim breakdown (`analytics.py`) | Tests; UI "Why this estimate"; summaries such as filing delay 1 to 13 days moves resolution 13 to 25 days |
+| Feedback loop for continuous improvement | Rate an accepted brief, administrator promotes it, it is cited as evidence in later investigations of the same claim type and ingested into Synapt (`feedback.py`, `workflow.py`) | Live: promoted lesson cited in the next brief's findings; Synapt grew 21 to 22 documents; double promotion refused |
+| Simple front-end | React and TypeScript bundle served by the same service (`frontend/`) | 16 UI tests; type-check clean; driven live in a browser |
+
+## Deliverables
+
+| Deliverable | Where |
+|---|---|
+| Architecture diagram | [architecture.svg](architecture.svg) and [architecture.png](architecture.png); also on slide 3 of the deck |
+| Design | [ARCHITECTURE.md](ARCHITECTURE.md), [MODEL_CARD.md](MODEL_CARD.md), [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md), [CHANGE_DECISIONS.md](CHANGE_DECISIONS.md) |
+| Full executable code (microservice) | This repository: FastAPI service, `uv.lock`, one-command setup ([SETUP.md](SETUP.md)); runs from a clean clone |
+| Panel presentation, 10 minutes | [Claims_Assistant_Panel_Deck.pptx](Claims_Assistant_Panel_Deck.pptx) (9 slides, timed speaker notes) and [PRESENTATION.md](PRESENTATION.md) |
+
+## Dataset
+
+The brief names "Free Synthetic Insurance Claims 100M" (Parquet). The full 2.52 GB file is downloaded,
+verified against the hash Hugging Face publishes, and used directly: all 13 key fields are present
+and the file holds exactly 100,000,000 rows. Retrieval queries all of it; models train on a
+repeatable 200,000-row sample.
+
+## The brief's requirement to use Synapt
+
+Synapt is used for what it can hold and do: procedures, a sample of claim cards for semantic
+ranking, and shared lessons, all over MCP and exercised live. It cannot hold 100 million claims through
+its text-ingestion tool ([why](SYNAPT_INTEGRATION.md#why-not-upload-all-100-million-claims)), so the
+Parquet file remains the authority for filters, numbers and models. If the instructors expect the full
+dataset inside Synapt, the route to investigate is a ticket-store provider uploaded through the
+console, which could not be tested here.
+
+## Known gaps
+
+* Synapt's semantic signal is mild (1.7x chance on claim type; none on prior claims).
+* DeepEval Contextual Relevancy passes on 1 of 4 live cases: the retrieval context deliberately
+  includes several comparison claims and procedures that the metric counts as off-topic.
+* The fraud model finds under a third of flagged claims (recall 31%).
+* All results are on synthetic data. No claim of real-world accuracy is made.

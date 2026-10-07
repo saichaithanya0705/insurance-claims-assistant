@@ -17,7 +17,11 @@ class Settings(BaseSettings):
     synapt_password: SecretStr = SecretStr("")
     synapt_provider_id: str = ""
     synapt_top_k: int = Field(default=5, ge=1, le=20)
+    # How many chunks of ingested historical claim cards to request for semantic matching.
+    synapt_case_top_k: int = Field(default=20, ge=1, le=50)
     synapt_graph_hops: int = Field(default=2, ge=0, le=4)
+    # Also call trident_get_procedures / trident_search. Their output is uncitable (no source IDs).
+    synapt_graph_enrichment: bool = False
     synapt_auth_encoding: Literal["json", "form"] = "json"
     synapt_auth_username_field: Literal["username", "email"] = "username"
     synapt_timeout_seconds: float = Field(default=20, ge=1, le=120)
@@ -25,6 +29,11 @@ class Settings(BaseSettings):
     claims_auth_enabled: bool = True
     claims_auth_database_path: Path | None = None
     claims_data_path: Path = Path("data/raw/claims_sample.json")
+    # Full 100M-row dataset (Parquet), queried in place by DuckDB when present.
+    claims_parquet_path: Path = Path("data/raw/parquet/insurance_claims_100M.parquet")
+    claims_train_rows: int = Field(default=600_000, ge=1_000, le=5_000_000)
+    claims_candidate_limit: int = Field(default=300, ge=20, le=2_000)
+    claims_duckdb_memory: str = Field(default="3GB", pattern=r"^\d+(\.\d+)?(MB|GB)$")
     claims_artifact_dir: Path = Path("artifacts/models")
     claims_search_enabled: bool = True
     claims_search_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -40,6 +49,12 @@ class Settings(BaseSettings):
     llm_enable_thinking: bool = False
     claims_api_key: SecretStr = SecretStr("")
     deepeval_model: str = ""
+    # Independent LLM judge. Empty falls back to DEEPEVAL_MODEL, then LLM_MODEL (not independent).
+    judge_model: str = ""
+    judge_mode: Literal["off", "inline"] = "off"
+    # The judge is advisory and runs in the background, so it cannot stall a brief. Each of its two
+    # attempts gets 60 s: with 35 s, about a quarter of live verdicts failed on endpoint latency.
+    judge_timeout_seconds: float = Field(default=60, ge=5, le=120)
 
     @model_validator(mode="after")
     def validate_live(self):

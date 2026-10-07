@@ -1,5 +1,7 @@
 # Live NVIDIA NIM validation — 2026-10-05
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 The application used real NVIDIA hosted inference with the supplied key held only in the ignored
 local `.env`. Synapt remained in `fixture` mode throughout: no live authentication, ingestion,
 retrieval or provider creation was attempted. All submitted claims and historical rows were synthetic.

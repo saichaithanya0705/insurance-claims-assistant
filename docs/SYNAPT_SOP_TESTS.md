@@ -1,5 +1,7 @@
 # Newly uploaded SOP browser tests — 2026-10-06
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 ## Result
 
 Six fresh Query Agent chats were submitted directly to **synapt_final_capstone** using the

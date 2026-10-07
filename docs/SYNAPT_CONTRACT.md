@@ -158,8 +158,23 @@ mixed query omitted a named review citation, and Doc ID metadata varied across q
 the same chunks. Five answers retained the graph warning, one did not. Historical identifiers
 remain masked in displayed chunks; live MCP authentication and parsing are still unverified.
 
-The [upload guide](SYNAPT_UPLOAD_GUIDE.md) records screenshots, reproducible corpus commands,
+The earlier upload guide (removed; superseded by [SETUP.md](SETUP.md) and [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md)) recorded screenshots, corpus commands,
 pilot probes and expansion instructions. Local pilot: ten attributed historical cards plus
 five synthetic procedures; complete eligible sample: 2,163 cards in 38 bounded batches.
 QA expectations are kept outside upload folders. Local validation: nine corpus/pack tests
 passed and Ruff passed; remote extraction, graph, procedure and retrieval checks remain open.
+
+
+## Update, 2026-10-06 (full-dataset work)
+
+* **Ingestion response.** `trident_ingest` returns `accepted`, `connector_type` and `response`; there is
+  no `req_id`. The adapter accepts a response without an `error` as "submitted" with `req_id: null`
+  and the caller verifies completion from `trident_get_stats` (document count rising).
+* **Chunking.** `chunk_size` and `chunk_overlap` are advertised and are measured in **tokens**; each is sent
+  only if the tool schema declares it.
+* **Authentication.** The access token is cached and reused (`expires_in` when stated, otherwise 4 minutes),
+  re-obtained on a 401, and HTTP 429 waits for `Retry-After`. Writes use a 180-second budget.
+* **Optional graph tools** (`trident_get_procedures`, `trident_search`) are off by default
+  (`SYNAPT_GRAPH_ENRICHMENT`); they return no source passages and cannot be cited.
+* **Masking.** Identifiers and place names are rewritten before indexing; see
+  [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md) for the formats that survive.

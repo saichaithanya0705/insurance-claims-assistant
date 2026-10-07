@@ -1,5 +1,7 @@
 # Claim search, presentation and SQLite login update
 
+> **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+
 Implemented October 6, 2026. This extends the completed [UI review fixes](UI_UX_FIXES_2026-10-06.md).
 
 ## What I did
