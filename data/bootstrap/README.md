@@ -16,5 +16,7 @@ claims database (`data/runtime/auth.sqlite` by default), applying the same schem
 Open the app on localhost to choose the first administrator's username and
 password. Use **Accounts** as an administrator to create user or admin credentials.
 
-Working databases, password hashes, sessions, model caches and `.env` are ignored
-by Git. The committed template deliberately contains no usable login credentials.
+Working databases, password hashes, sessions and model caches are ignored by Git.
+The committed `auth.sqlite` template deliberately contains no usable login credentials.
+`.env` is the exception: it is tracked because this is a private repository the owner
+syncs between their own machines (see `docs/SETUP.md`).

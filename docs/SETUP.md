@@ -32,12 +32,17 @@ library used by the saved-case search box. Both are optional but recommended.
 
 ## 2. Configure
 
+This private repository **tracks `.env`**, so a clone already contains the live configuration and
+credentials and needs no editing. Only if `.env` is missing, start from the template:
+
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-`.env` is ignored by Git and must never be committed. For the full live system set:
+All paths in `.env` are relative to the repository, so it works unchanged on any machine. Never
+make this repository public while `.env` is tracked; if you do, untrack it and rotate every key.
+For the full live system the values are:
 
 | Key | Value |
 |---|---|
@@ -138,7 +143,7 @@ npm run build; Set-Location ..` (the build writes into `src/claims/static/app`).
 | `artifacts/synapt/` | built corpus and upload ledger | no (built) |
 | `data/runtime/` | databases: saved cases, accounts, checkpoints | no (created on first run) |
 | `data/bootstrap/` | credential-free seed databases copied on first run | yes |
-| `.env` | secrets and mode switches | no |
+| `.env` | secrets and mode switches | yes (private repository only) |
 
 ## Troubleshooting
 

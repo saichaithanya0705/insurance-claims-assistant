@@ -1,5 +1,6 @@
 .venv/
-.env
+# .env is deliberately tracked: this is a private repository the owner syncs between
+# their own machines. If the repository ever becomes public, untrack it and rotate keys.
 __pycache__/
 .pytest_cache/
 .ruff_cache/
