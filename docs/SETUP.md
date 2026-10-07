@@ -66,8 +66,8 @@ This runs four steps and prints a result line for each:
 
 | Step | What it does | Time |
 |---|---|---|
-| `data` | Downloads `insurance_claims_100M.parquet` (2.5 GB) from Hugging Face, then **verifies its SHA256 against the hash Hugging Face publishes**, the row count (100,000,000) and the 13 column names | 10 to 30 min, depending on bandwidth. Interrupted downloads resume |
-| `train` | Draws a repeatable 200,000-row sample from the file and trains the amount, resolution-time and fraud-flag models | about 80 s |
+| `data` | Downloads `insurance_claims_100M.parquet` (2.5 GB) from Hugging Face, then **verifies its SHA256 against the hash Hugging Face publishes**, the row count (100,000,000) and the 13 column names | 3 to 30 min, depending on bandwidth (180 s measured on a fast link). Interrupted downloads resume |
+| `train` | Draws a repeatable 600,000-row sample (`CLAIMS_TRAIN_ROWS`) from the file and trains the amount, resolution-time and fraud-flag models | about 4 to 5 minutes (260 s measured in a fresh clone) |
 | `corpus` | Writes 1,000 claim cards (200 per type) and the 5 procedures as upload batches under `artifacts/synapt/corpus-v3` | about 6 s |
 | `check` | Reports what is ready and what is missing | a few seconds |
 
@@ -133,6 +133,42 @@ three model estimates with a "Why this estimate" explanation, and (when `JUDGE_M
 
 To rebuild the UI after editing `frontend/`: `Set-Location frontend; npm ci; npm run test;
 npm run build; Set-Location ..` (the build writes into `src/claims/static/app`).
+
+## 8. Optional: reproduce the fraud experiments
+
+`bootstrap.py train` trains the models the application serves. It does **not** run the fraud
+experiments, and those need an extra ordered chain: `improve_fraud_model.py` stops with
+`FileNotFoundError: retraining_report.json` unless `retrain_models.py` has run first. Run these
+after `bootstrap.py data`. In a fresh clone on 2026-10-07 all four exited 0 in about 16 minutes:
+
+```powershell
+uv run python scripts/retrain_models.py --rows 600000 --memory-limit 1GB   # ~5 min; writes artifacts/models/retraining_report.json
+uv run python scripts/improve_fraud_model.py                                 # ~5.5 min; regenerates fraud_training_expanded.parquet
+uv run python scripts/experiment_fraud_features.py                           # ~4.5 min; regenerates fraud_feature_holdout.parquet
+uv run python scripts/experiment_fraud_features.py --verify-only             # ~1 min; independent re-check
+```
+
+Expected result: both Parquet files in `data/processed/ml/` are rebuilt **byte for byte**.
+
+| File | SHA256 |
+|---|---|
+| `fraud_training_expanded.parquet` | `d73c2665c25ae9434b516e2fd3e5fdd2ff058daf80b4aea09bfb3541f84933bf` |
+| `fraud_feature_holdout.parquet` | `bcfd03cc42c3e4f1510b34a8cab9350b051dbd0450285a6e6163603ce6c0c22f` |
+
+Check with `Get-FileHash -Algorithm SHA256 data/processed/ml/<file>.parquet`. The trained `.joblib`
+files are **not** byte-identical across machines (they embed training timestamps), but their
+embedded reports (every metric, split and sample hash, ignoring timestamps and timings) matched the
+originals with zero differences.
+
+Notes:
+
+- Both Parquet files are committed, so a fresh clone already has them; the chain above is only
+  needed to prove they can be regenerated from the 100M-row source.
+- `experiment_fraud_features.py` is pre-registered and refuses to run twice against the same
+  `artifacts/models` ("holdout is reserved/consumed"). To start over, delete
+  `fraud_feature_protocol.json` and `fraud_feature_experiment.json` from `artifacts/models`.
+- `--verify-only` loads the candidate model written by the full run, so run the full experiment
+  once before using it.
 
 ## What is where
 
