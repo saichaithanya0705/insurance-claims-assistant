@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { KeyRound, Network, RefreshCw, ShieldCheck } from 'lucide-react'
 import { api, hasApiKey, setApiKey, type Health, type IntegrationStatus, type ModelStatus } from '../lib/api'
 import { label } from '../lib/format'
+import { STAGES } from './Pipeline'
+import { SynaptStatsCard } from './SynaptStatsCard'
 import { Card, ErrorBox, Pill, useToast } from './ui'
 
 const TONE = { teal: 'var(--teal)', amber: 'var(--amber)', violet: 'var(--violet)', sky: 'var(--sky)', rose: 'var(--rose)', slate: 'var(--text-3)' }
@@ -31,6 +33,7 @@ export function ConnectionView({ health, onHealthRefresh }: { health: Health | n
   const [loading, setLoading] = useState(false)
   const [key, setKey] = useState('')
   const [keyApplied, setKeyApplied] = useState(hasApiKey())
+  const [statsReload, setStatsReload] = useState(0)
   const refreshRequest = useRef(0)
 
   const refresh = useCallback(async () => {
@@ -95,7 +98,7 @@ export function ConnectionView({ health, onHealthRefresh }: { health: Health | n
           </h1>
           <p className="subtitle">Inspect integration readiness and the services used for evidence retrieval.</p>
         </div>
-        <button className="btn" onClick={() => (refresh(), onHealthRefresh())} disabled={loading}>
+        <button className="btn" onClick={() => (refresh(), onHealthRefresh(), setStatsReload((n) => n + 1))} disabled={loading}>
           <RefreshCw size={14} className={loading ? 'spin' : undefined} /> Refresh status
         </button>
       </div>
@@ -124,7 +127,7 @@ export function ConnectionView({ health, onHealthRefresh }: { health: Health | n
             ))}
             <Node x={20} y={128} w={130} h={44} title="Browser UI" sub="React + Motion" tone="sky" delay={0.05} />
             <Node x={200} y={128} w={130} h={44} title="Application" sub={health ? `Status ${label(health.status)}` : '…'} tone={health?.status === 'ok' ? 'teal' : 'amber'} delay={0.15} />
-            <Node x={380} y={128} w={130} h={44} title="Investigation" sub="7-stage workflow" tone="teal" delay={0.25} />
+            <Node x={380} y={128} w={130} h={44} title="Investigation" sub={`${STAGES.length}-stage workflow`} tone="teal" delay={0.25} />
             {right.map((n, i) => (
               <Node key={n.title} x={590} y={n.y} w={170} h={44} title={n.title} sub={n.sub} tone={n.tone} delay={0.4 + i * 0.1} />
             ))}
@@ -145,6 +148,10 @@ export function ConnectionView({ health, onHealthRefresh }: { health: Health | n
           </div>
         </div>
       </Card>
+
+      <div style={{ marginTop: 20 }}>
+        <SynaptStatsCard reload={statsReload} />
+      </div>
 
       <div className="grid-2" style={{ marginTop: 20 }}>
         <Card>

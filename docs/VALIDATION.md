@@ -5,6 +5,14 @@ and the **real NVIDIA models**, on the Windows workstation that built it. Older 
 ([LIVE_NIM_VALIDATION.md](LIVE_NIM_VALIDATION.md), [LIVE_PROJECT_EVALUATION.md](LIVE_PROJECT_EVALUATION.md))
 describe the earlier 3,000-row version.
 
+> **Note, 13 October 2026.** This record describes an earlier provider that held claim cards as documents. The
+> current provider, `synapt_capstone1`, holds the 17 procedures as documents (18 documents and 39 chunks with Synapt's
+> own episode store) and 2,000 settled past claims in its ticket store; it holds no cards. Similar past claims now come
+> from the ticket store (2 to 4 per claim), so the card counts, the semantic-precision table and the "48 to 55 matching
+> cards" below are historical. See
+> [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md#how-the-data-is-split-across-synapt-corrected-13-october-2026).
+> Current test counts: backend 905, frontend 171.
+
 ## Summary
 
 | Check | Result |

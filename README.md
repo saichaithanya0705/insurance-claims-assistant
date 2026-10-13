@@ -16,7 +16,7 @@ includes the images and complete original transcript in a single file.
 | Capability | How |
 |---|---|
 | **Hybrid retrieval over 100M claims** | The Parquet file is queried in place with DuckDB. Exact filters (claim type, state, status, amount range, prior-claims range) run in SQL, then keyword, numeric-similarity and Synapt semantic ranks are fused. About 3 to 5 s per search |
-| **Synapt knowledge** | Handling procedures, the original 1,000 historical claim cards and a 19,887-card expansion with submission/verification bookkeeping, plus reviewed handler lessons, retrieved over MCP |
+| **Synapt knowledge** | Handling procedures as documents (the knowledge graph of procedures and steps is built from them) and 2,000 settled past claims in Synapt's ticket store (similar-claim search), retrieved over MCP |
 | **Multi-stage workflow** | LangGraph: classify, retrieve, investigate, risk, recommend, validate, independent judge, human review gate. Checkpointed, resumable |
 | **Guardrails** | Strict input validation; every finding and recommendation must cite a supplied source; boundary checks block coverage, fraud and payment decisions |
 | **Predictions with explanations** | Amount, resolution time and fraud flag, each with an interval or threshold, a direction-of-effect summary and a per-claim breakdown |
@@ -35,21 +35,23 @@ Full procedure, with timings and troubleshooting: **[docs/SETUP.md](docs/SETUP.m
 git clone <your-repository-url> synapt_capstone
 Set-Location synapt_capstone
 uv sync --locked --extra evaluation --extra search
-Copy-Item .env.example .env          # then fill in the Synapt and NVIDIA keys for live mode
+Copy-Item .env.example .env          # then fill in the Synapt login (required) and, for model-written briefs, the NVIDIA key
 uv run python scripts/bootstrap.py all
-uv run uvicorn claims.api:app --host 127.0.0.1 --port 8000
+uv run uvicorn claims.api.main:app --host 127.0.0.1 --port 8000
 ```
 
 `bootstrap.py all` downloads and verifies the 2.5 GB dataset, trains the models and builds the
-Synapt corpus. With `SYNAPT_MODE=fixture` and `AGENT_MODE=fixture` (the defaults) no external
-service is called at all. Open <http://127.0.0.1:8000> and create the administrator on first use.
+local card file the degraded-mode fallback uses. The Synapt provider is already populated (17 procedures and
+2,000 past claims in its ticket store); nothing needs uploading. **Synapt is required**: the application will not start without the Synapt login and provider ID
+in `.env`, and no mode or fallback runs it without Synapt. `AGENT_MODE=fixture` (the default) only replaces the
+NVIDIA model-written brief with deterministic rules; evidence always comes from Synapt. Open <http://127.0.0.1:8000> and create the administrator on first use.
 
 ## Verify it
 
 ```powershell
 uv run pytest -q                                  # backend, offline
-uv run python scripts/bootstrap.py check          # data, models, corpus, Synapt
-uv run python scripts/synapt_ingest.py verify     # Synapt semantic precision against chance
+uv run python scripts/bootstrap.py check          # data, models, local card file, Synapt store
+uv run python scripts/verify_synapt_store.py      # Synapt: 17 procedures, 2,000 tickets, no leftover card documents
 Set-Location frontend; npm run test; Set-Location ..
 ```
 
@@ -57,9 +59,10 @@ Results and the evidence behind each claim are recorded in [docs/VALIDATION.md](
 
 The 7 October refresh has dated reports for [data expansion and upload status](docs/DATA_EXPANSION_2026-10-07.md),
 [model retraining](docs/ML_RETRAINING_2026-10-07.md), and [evaluation correctness](docs/EVAL_AUDIT_2026-10-07.md).
-Keep Parquet as the local dataset; upload its generated text cards to this Synapt knowledge provider.
-An accepted upload is not evidence that extraction has finished. See the expansion report before uploading
-any batch again.
+Those reports describe the claim cards then uploaded to Synapt. On 13 October 2026 the cards were removed from the
+provider and 2,000 settled past claims were uploaded to its ticket store instead; see
+[SYNAPT_INTEGRATION.md](docs/SYNAPT_INTEGRATION.md#how-the-data-is-split-across-synapt-corrected-13-october-2026).
+Keep Parquet as the local dataset, and do not upload cards to this provider again.
 
 ## Documentation
 

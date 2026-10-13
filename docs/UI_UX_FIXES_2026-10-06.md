@@ -55,8 +55,8 @@ Sample measurements: `ui-fixes-2026-10-06/contrast-samples.json`.
 - Added `CaseLibrary.tsx` for server-backed search/filter/pagination, and `Inspector.tsx` for native dialog focus containment, Escape and focus return.
 - Changed `Results.tsx` for the compact header, attention summary, grouped limitations, contextual citations, mobile case navigation, expandable comparisons and Activity diagnostics.
 - Updated `Sidebar.tsx`, `CommandPalette.tsx`, `lib/api.ts` and `index.css` for labeled scopes/navigation, timeout recovery, task-based layout, typography, touch targets, drawers and narrow-screen stages. Removed the original permanent grid and sticky intake scroll behavior rather than retaining it underneath a visual workaround.
-- Added `lib/presentation.ts` for pure readable display transformations and literal excerpts; `lib/states.ts` consumes the shared `src/claims/us_states.json`. Enabled `resolveJsonModule` in the frontend TypeScript configuration so both API search and intake use the same state names.
-- Changed `src/claims/store.py` and `api.py` for bounded, parameterized saved-case search; changed `workflow.py` for the document-availability validation check.
+- Added `lib/presentation.ts` for pure readable display transformations and literal excerpts; `lib/states.ts` consumes the shared `src/claims/core/us_states.json`. Enabled `resolveJsonModule` in the frontend TypeScript configuration so both API search and intake use the same state names.
+- Changed `src/claims/storage/run_store.py` and `api/main.py` for bounded, parameterized saved-case search; changed `investigation/workflow.py` for the document-availability validation check.
 - Added `tests/test_case_library.py` and extended `frontend/tests/ui-regressions.test.cjs`; rebuilt `src/claims/static/app/`; wrote this report, screenshots and isolated test artifacts.
 
 ### Why this approach

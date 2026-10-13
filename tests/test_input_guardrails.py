@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from claims.models import ClaimInput, SearchFilters, redact_personal_data
+from claims.core.schemas import ClaimInput, SearchFilters, redact_personal_data
 
 
 def claim(**override):

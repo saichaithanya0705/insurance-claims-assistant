@@ -9,9 +9,9 @@ identity, graph provenance and semantic-quality limitations.
 
 ## What was implemented and why
 
-`FixtureSynaptAdapter.retrieve(ClaimInput)` returns fixed synthetic handling procedures,
-explicitly labeled `synthetic_fixture`. These are application test fixtures, not policies,
-historical claim records, or statements about a submitted incident.
+There is no fixture adapter. An early version had one (fixed procedures labelled `synthetic_fixture`);
+it was removed because Synapt is required and no setting or fallback may stand in for it. The unit tests
+use a test double that lives only under `tests/` and cannot be selected by configuration.
 
 `LiveSynaptAdapter.retrieve(ClaimInput)` uses a synchronous bridge to
 `retrieve_async(ClaimInput)`. Async callers must await `retrieve_async`; the sync method
@@ -74,7 +74,8 @@ Discovery alone establishes neither successful retrieval nor provenance quality.
 
 - `await call_read_tool(name: str, arguments: dict) -> dict`: only discovered tools from
   `trident_get_chunks`, `trident_get_procedures`, `trident_search`, `trident_traverse`,
-  `trident_get_schema`, `trident_get_stats`, `trident_query`, `trident_episodes` are allowed.
+  `trident_get_schema`, `trident_get_stats`, `trident_get_node`, `trident_find_exact`, `trident_cypher`,
+  `trident_query`, `trident_episodes` are allowed (`READ_ONLY_TOOLS` in `claims.synapt.adapter`).
   The caller must pass the configured `provider_id`. A structured response object is required.
   This lower-level method returns data for callers to validate, not approved evidence findings.
 - `await ingest(content: str, filename: str, document_type: str = "text") -> dict`:
@@ -85,10 +86,13 @@ Discovery alone establishes neither successful retrieval nor provenance quality.
   fields, incompatible enums or other unsupported contracts before submission.
   A valid `req_id` returns `status="submitted"` and `completion_verified=false`.
   If the tenant uses other field names, integration must be updated after discovery.
-- `await feedback(query_id: str, rating: str, reason: str) -> dict`: explicit reviewed feedback
-  only. The initial contract requires exact fields `provider_id`, `query_id`, `rating`, `reason`
-  on `trident_feedback`. Ratings must conform to the discovered schema; no rating vocabulary
-  is guessed. Caller must associate the actual server query identifier with a reviewed result.
+- `await send_feedback_async(feedback_id, verdict, caller_type="user", post_action=None, reason=None) -> dict`: a handler's
+  explicit verdict on an answer Synapt's query agent wrote. The tenant's `trident_feedback` schema (12 October 2026) is
+  `feedback_id`, `caller_type` (`user`, `agent`, `mcp_tool`), `verdict` (`deflected`, `partial`, `not_deflected`), `post_action`
+  (`proceeded`, `retried`, `fallback`, `escalated`, `failed`), `score` and `reason`, and has **no provider field**, so the
+  provider-scoping check cannot apply: only a query ID that Synapt returned for this application's own query is sent, and
+  every argument is validated against the discovered schema. Synapt answers `{"accepted": true, "status": "received"}`; any
+  other answer is an error. Single attempt, never retried.
 
 Ingestion and feedback never run as part of retrieval and never automatically retry.
 A timeout may occur after a remote write; inspect remote state before resubmitting.
@@ -97,6 +101,8 @@ were used server-side for the authorized live tests and remain excluded from rep
 
 The current beta `trident_query` takes `question`, rather than the generic `query` contract;
 normal retrieval uses `trident_get_chunks` and does not consume generated query answers as evidence.
+Since 13 October 2026 similar past claims come from the provider's ticket store through `trident_query` with
+`ticket_mode="only"` (see "Update, 2026-10-13" below); that call returns no generated answer.
 `trident_get_procedures` returns names/intents/steps without source IDs, and `trident_search`
 returns node IDs without original source passages. These optional responses remain excluded
 from cited evidence with visible warnings. Explicit `trident_traverse` at depth 2 returned
@@ -107,7 +113,8 @@ validated source-bearing passages, resets on errors/empty results, and is not an
 
 The beta feedback schema is `feedback_id`, `caller_type`, `verdict` (and optional metadata),
 which differs from the explicit initial feedback adapter. It therefore fails closed; local
-handler feedback works and no remote feedback writes were attempted. Ingestion submission
+handler feedback works and no remote feedback writes were attempted. (Superseded on 12 October 2026: the adapter now
+sends that schema, see `send_feedback_async` above.) Ingestion submission
 contract/completion through MCP remains untested; the corpus was uploaded through the console.
 
 ## Live acceptance checks after access is granted
@@ -178,3 +185,26 @@ passed and Ruff passed; remote extraction, graph, procedure and retrieval checks
   (`SYNAPT_GRAPH_ENRICHMENT`); they return no source passages and cannot be cited.
 * **Masking.** Identifiers and place names are rewritten before indexing; see
   [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md) for the formats that survive.
+
+## Update, 2026-10-13 (procedures as documents, past claims as tickets)
+
+The provider `synapt_capstone1` now holds the 17 procedures as documents and 2,000 settled past claims in its ticket store
+(kind `ticket_mining`, `has_ticket_store: true`); the claim-card documents were deleted. See
+[SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md) ("How the data is split across Synapt").
+
+* **Similar past claims.** One `trident_query` call per retrieval with `provider_id`, a fixed `question` ("Past claims like
+  this one", not embedded in this mode), `ticket_mode="only"` and `tickets` holding one ticket: `title`, `description`,
+  `category`, `region`, built by `claims.corpus.cards.claim_ticket` (masking-safe, no outcome). Arguments are validated
+  against the discovered schema. In `only` mode Synapt embeds no question, walks no graph and calls no model.
+* **Permission.** The call is authorised as `trident_ticket_neighbours`, a separate entry on the Policy Passage Retriever's
+  tool list, so that agent can search tickets without being able to ask the query agent a question.
+* **Response.** A `provider_id` other than the configured one is rejected. From the first `ticket_labels` item, every label
+  value's `example` neighbour whose `ticket_id` is a claim alias (`claimref_...`) is kept, ordered by its `score`, decoded to
+  a claim ID and de-duplicated; one example per label value gives 2 to 4 claims. Labels and confidences are ignored. An
+  empty or skipped ticket store (`stores_skipped.ticket`) or a failed call leaves a warning and no semantic rank; the claims
+  are always read from the Parquet file under the handler's filters.
+* **Episodic chunks.** A passage with `doc_type: "episodic"` (Synapt's episode memory, `es_<provider>`) is dropped from
+  evidence: it records an earlier query session, not policy.
+* **Verification.** `scripts/verify_synapt_store.py` checks the 17 procedures by source ID, the ticket store from
+  `trident_get_stats` (2,000 tickets, ID field `ticket_id`, label fields `fraud_flag` and `resolution`) and that no
+  document of more than 100 chunks, other than Synapt's episodic document (`es_...`), is left.

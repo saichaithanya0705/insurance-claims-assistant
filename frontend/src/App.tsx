@@ -12,6 +12,7 @@ import {
   FlaskConical,
   FolderOpen,
   Gauge,
+  Bot,
   History,
   PanelRightOpen,
   Plug,
@@ -26,6 +27,9 @@ import { Sidebar, NAV, type View } from './components/Sidebar'
 import { CommandPalette, type PaletteCommand } from './components/CommandPalette'
 import { EMPTY_FILTERS, EMPTY_FORM, IntakeForm, buildClaim, buildFilters, formFromClaim, type FilterState, type FormState } from './components/IntakeForm'
 import { LoadingState, RunView } from './components/Results'
+import { BriefPreview } from './components/BriefPreview'
+import { LiveActivity } from './components/LiveActivity'
+import { newRunId } from './lib/liveProgress'
 import { CaseLibrary } from './components/CaseLibrary'
 import { Inspector } from './components/Inspector'
 import { DataView } from './components/ui'
@@ -37,6 +41,7 @@ import { CaseSearch } from './components/CaseSearch'
 import { LoginGate, type User } from './components/LoginGate'
 import { AccountsView } from './components/AccountsView'
 import { ExplainabilityView } from './components/ExplainabilityView'
+import { AgentsView } from './components/AgentsView'
 import { ObservabilityView } from './components/ObservabilityView'
 
 function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => void; authEnabled: boolean }) {
@@ -59,6 +64,8 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
   const [selectedDemo, setSelectedDemo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [startedAt, setStartedAt] = useState(0)
+  // The ID of the investigation being started now; the live panel follows it while the request is in flight.
+  const [liveRunId, setLiveRunId] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [run, setRun] = useState<Run | null>(null)
   const [recent, setRecent] = useState<RecentRun[]>(() => loadRecent(user.id))
@@ -164,26 +171,26 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
     if (selectedRun.current === r.run_id) setRun(r)
   }, [remember])
 
-  // The independent judge finishes in the background; pick its verdict up without a reload.
-  const pendingJudgeRun = run?.judge?.status === 'pending' ? run.run_id : null
+  // The independent judge, and sometimes the query agent's answer, finish in the background; pick them up without a reload.
+  const pendingRun = run?.judge?.status === 'pending' || run?.query_agent?.pending ? run.run_id : null
   useEffect(() => {
-    if (!pendingJudgeRun) return
+    if (!pendingRun) return
     let attempts = 0
     const timer = window.setInterval(async () => {
       attempts += 1
       try {
-        const latest = await api<Run>(`/api/investigations/${encodeURIComponent(pendingJudgeRun)}`)
-        if (latest.judge && latest.judge.status !== 'pending') {
-          setRun((current) => (current?.run_id === pendingJudgeRun ? { ...current, judge: latest.judge } : current))
-          window.clearInterval(timer)
-        }
+        const latest = await api<Run>(`/api/investigations/${encodeURIComponent(pendingRun)}`)
+        const judged = !latest.judge || latest.judge.status !== 'pending'
+        const answered = !latest.query_agent?.pending
+        setRun((current) => (current?.run_id === pendingRun ? { ...current, judge: latest.judge ?? current.judge, query_agent: latest.query_agent ?? current.query_agent } : current))
+        if (judged && answered) window.clearInterval(timer)
       } catch {
         /* transient: keep trying until the attempts run out */
       }
       if (attempts >= 36) window.clearInterval(timer) // about three minutes at five seconds
     }, 5000)
     return () => window.clearInterval(timer)
-  }, [pendingJudgeRun])
+  }, [pendingRun])
 
   const loadDemo = (index: number) => {
     const demo = demoCases[index]
@@ -208,11 +215,13 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       setFormError((e as Error).message)
       return
     }
+    const runId = newRunId()
     setStartedAt(Date.now())
+    setLiveRunId(runId)
     setBusy(true)
     selectedRun.current = null
     try {
-      const result = await post<Run>('/api/investigations', body)
+      const result = await post<Run>('/api/investigations', { ...body, run_id: runId })
       showRun(result)
       setForm(EMPTY_FORM)
       setFilters(EMPTY_FILTERS)
@@ -224,6 +233,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       selectedRun.current = run?.run_id ?? null
       setFormError((e as Error).message)
     } finally {
+      setLiveRunId(null)
       setBusy(false)
     }
   }
@@ -284,7 +294,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((o) => !o)
-      } else if (e.altKey && ['1', '2', '3', '4', '5', '6', '7'].includes(e.key)) {
+      } else if (e.altKey && ['1', '2', '3', '4', '5', '6', '7', '8'].includes(e.key)) {
         e.preventDefault()
         const item = NAV.find(n => n.key === e.key)
         if (item && (admin || !item.admin)) navigate(item.view)
@@ -300,10 +310,11 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
       { id: 'v-ws', group: 'Navigate', label: 'Investigation workspace', hint: 'Alt 1', icon: <FilePlus2 size={15} />, run: () => setView('workspace') },
       { id: 'v-cases', group: 'Navigate', label: 'Open saved cases', hint: 'Alt 2', icon: <FolderOpen size={15} />, run: () => setView('cases') },
       { id: 'v-xp', group: 'Navigate', label: 'Explainability', hint: 'Alt 3', icon: <Eye size={15} />, run: () => setView('explain') },
-      { id: 'v-obs', group: 'Navigate', label: 'Observability and traces', hint: 'Alt 4', icon: <Activity size={15} />, run: () => navigate('observability') },
-      { id: 'v-q', group: 'Navigate', label: 'Quality & models', hint: 'Alt 5', icon: <Gauge size={15} />, run: () => setView('quality') },
-      { id: 'v-c', group: 'Navigate', label: 'Connection settings', hint: 'Alt 6', icon: <Plug size={15} />, run: () => setView('connection') },
-      { id: 'v-accounts', group: 'Navigate', label: 'Manage accounts', hint: 'Alt 7', icon: <UsersRound size={15} />, run: () => setView('accounts') },
+      { id: 'v-agents', group: 'Navigate', label: 'Agents and their tools', hint: 'Alt 4', icon: <Bot size={15} />, run: () => setView('agents') },
+      { id: 'v-obs', group: 'Navigate', label: 'Observability and traces', hint: 'Alt 5', icon: <Activity size={15} />, run: () => navigate('observability') },
+      { id: 'v-q', group: 'Navigate', label: 'Quality & models', hint: 'Alt 6', icon: <Gauge size={15} />, run: () => setView('quality') },
+      { id: 'v-c', group: 'Navigate', label: 'Connection settings', hint: 'Alt 7', icon: <Plug size={15} />, run: () => setView('connection') },
+      { id: 'v-accounts', group: 'Navigate', label: 'Manage accounts', hint: 'Alt 8', icon: <UsersRound size={15} />, run: () => setView('accounts') },
       ...demoCases.map((d, i) => ({
         id: `demo-${d.id}`,
         group: 'Load demo case',
@@ -476,7 +487,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                       <div>
                         {busy && (workspaceMode === 'draft' || !run) ? (
                           <motion.div key="loading" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                            <LoadingState startedAt={startedAt} />
+                            {liveRunId ? <><LiveActivity key={liveRunId} runId={liveRunId} startedAt={startedAt} admin={admin} /><BriefPreview key={`preview-${liveRunId}`} runId={liveRunId} admin={admin} /></> : <LoadingState startedAt={startedAt} />}
                           </motion.div>
                         ) : run ? (
                           <motion.div key={run.run_id} className="output" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -491,6 +502,7 @@ function Shell({ user, onLogout, authEnabled }: { user: User; onLogout: () => vo
                 </motion.section>
               )}
               {view === 'cases' && <motion.section key="cases" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}><div className="page-head"><div><div className="eyebrow">Case queue</div><h1 className="display" tabIndex={-1}>Saved cases</h1><p className="subtitle">Open a brief, or sort by priority to work the queue.</p></div><button className="btn primary" disabled={busy} onClick={resetForm}><FilePlus2 size={15} /> New investigation</button></div><CaseLibrary onOpen={openRun} busy={busy} /></motion.section>}
+              {view === 'agents' && <AgentsView admin={admin} />}
               {view === 'explain' && <ExplainabilityView admin={admin} runId={explainRunId} onSelect={setExplainRunId} onOpenTrace={openTrace} />}
               {admin && view === 'observability' && <ObservabilityView key={traceTarget?.n ?? 0} focusRun={traceTarget?.id ?? null} onExplain={openExplain} />}
               {admin && view === 'accounts' && <AccountsView />}

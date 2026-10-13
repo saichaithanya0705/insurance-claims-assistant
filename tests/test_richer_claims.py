@@ -9,9 +9,9 @@ import httpx
 import numpy as np
 import pytest
 
-from claims.fraud_features import file_digest, rows_digest
-from claims.reviewed_claims import reviewed_records
-from claims.richer_data import (
+from claims.ml.fraud_features import file_digest, rows_digest
+from claims.ml.reviewed_claims import reviewed_records
+from claims.ml.richer_data import (
     MENDELEY_ID,
     normalize_records,
     parse_csv,
@@ -20,7 +20,7 @@ from claims.richer_data import (
     verified_records,
     write_parquet,
 )
-from claims.richer_fraud import RichFeatureEncoder, choose_configurations, temporal_cohorts
+from claims.ml.richer_fraud import RichFeatureEncoder, choose_configurations, temporal_cohorts
 
 
 @pytest.fixture

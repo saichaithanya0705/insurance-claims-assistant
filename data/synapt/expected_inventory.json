@@ -1,365 +1,63 @@
 {
   "schema_version": 1,
-  "note": "Regenerate with: uv run python scripts/verify_synapt_store.py --write-expected",
+  "note": "Procedures are documents; past claims are tickets. Check with: python scripts/verify_synapt_store.py",
   "verified_against_synapt": {
-    "date": "2026-10-07",
-    "provider": "synapt_final_capstone",
-    "documents": 63,
-    "chunks": 20914
+    "date": "2026-10-13",
+    "provider": "synapt_capstone1",
+    "documents": 18,
+    "chunks": 39,
+    "note": "18 = 17 procedures + Synapt's own episodic document es_synapt_capstone1 (22 chunks, grows with use). The 20 claim-card batches were deleted on 13 October 2026; past claims are in the ticket store (2,000 tickets, uploaded through the console's Ticketing source)."
   },
   "base": {
-    "batches": [
-      {
-        "name": "cards-0001.txt",
-        "cards": 100,
-        "chars": 31495,
-        "sha256": "b0b4bafe99fad0330b65368e7cf512b5281701590c11759661940cdc24e6b8a8"
-      },
-      {
-        "name": "cards-0002.txt",
-        "cards": 100,
-        "chars": 31538,
-        "sha256": "e30a5207d462a66aa08d4f0dd4ed9579dca3d6253a7c7dbc8026ba15ac8709bb"
-      },
-      {
-        "name": "cards-0003.txt",
-        "cards": 100,
-        "chars": 31449,
-        "sha256": "77c4620587e1d805f0cdde3d806966653e6f8a41911d5e5d4f068707bde3e02b"
-      },
-      {
-        "name": "cards-0004.txt",
-        "cards": 100,
-        "chars": 31493,
-        "sha256": "1a81a0303a3143be16a145d22ba10931787603d4b45faa476b7bfb6e1483e7c7"
-      },
-      {
-        "name": "cards-0005.txt",
-        "cards": 100,
-        "chars": 31528,
-        "sha256": "a315df765fb24056ef88728cf3ef99b4b2f7e7ff17e0481c81b11014a6a671d9"
-      },
-      {
-        "name": "cards-0006.txt",
-        "cards": 100,
-        "chars": 31491,
-        "sha256": "dca773509a8e86828c35d9e53eaf128b7a48de75ba8445e1833d9d585a399e8b"
-      },
-      {
-        "name": "cards-0007.txt",
-        "cards": 100,
-        "chars": 31483,
-        "sha256": "4999e95cf7ab81e733f5319c14be96fd4a88e96a54ab73be1b277e9b48a38078"
-      },
-      {
-        "name": "cards-0008.txt",
-        "cards": 100,
-        "chars": 31545,
-        "sha256": "06549006da491ce326ca813e1537ff40e3e15356ce0373b12139ebffdbdda438"
-      },
-      {
-        "name": "cards-0009.txt",
-        "cards": 100,
-        "chars": 31509,
-        "sha256": "b0a8244ad0f39c04c6aa804471971eb2a03b2599173215b7dfce0de91867cdad"
-      },
-      {
-        "name": "cards-0010.txt",
-        "cards": 100,
-        "chars": 31500,
-        "sha256": "944363dae925ee7432f8e41908ed819d68f1160436ca123758e1b480dde2cfbc"
-      }
-    ]
+    "batches": []
   },
   "expansion": {
-    "batches": [
-      {
-        "name": "expanded-0001.txt",
-        "cards": 500,
-        "chars": 155534,
-        "sha256": "2298f54e1265d7d0d6e4fb1c990a740852396ddb17f52e6930d1973368e53854",
-        "marker": "cardpack_de08147095cd44bb5155"
-      },
-      {
-        "name": "expanded-0002.txt",
-        "cards": 500,
-        "chars": 155624,
-        "sha256": "2076976b929b0c49c7a15354dbbf42ee746b87ed566de25ec33a3e9e42dd0eb2",
-        "marker": "cardpack_a0e7b29fd8ffae1a63e2"
-      },
-      {
-        "name": "expanded-0003.txt",
-        "cards": 500,
-        "chars": 155533,
-        "sha256": "9fc660cf9f00c42ad310f3bf8e958472a3dba4c6aa6d8d7e380642206bb68616",
-        "marker": "cardpack_52dc0655af1bbdb02f05"
-      },
-      {
-        "name": "expanded-0004.txt",
-        "cards": 500,
-        "chars": 155582,
-        "sha256": "91eb069c78d9b487c70832d78d4f79e480006e7ffa07ea4271bdea4f4e247b13",
-        "marker": "cardpack_06130b791ee614e99a5f"
-      },
-      {
-        "name": "expanded-0005.txt",
-        "cards": 500,
-        "chars": 155580,
-        "sha256": "c0d917957108daa956e212136909f5e002e69e5234ed8f3b2ee8b0a2cfa566fb",
-        "marker": "cardpack_80a59e2669ace81aa75f"
-      },
-      {
-        "name": "expanded-0006.txt",
-        "cards": 500,
-        "chars": 155638,
-        "sha256": "c6956fb857256a746d982aa1b8c0aa3dd8a66d9b08b60058a83351720a70b0d9",
-        "marker": "cardpack_07f0c864bf18194378a0"
-      },
-      {
-        "name": "expanded-0007.txt",
-        "cards": 500,
-        "chars": 155637,
-        "sha256": "760fd4b052b24f1a21da6b8fc12ab835e5f6553e3f1218c6915a73f443dec83c",
-        "marker": "cardpack_e2db033b2311f58c44b9"
-      },
-      {
-        "name": "expanded-0008.txt",
-        "cards": 500,
-        "chars": 155538,
-        "sha256": "3dee14f247a4994ac66dc1c91a9901e2dfbe5e13f1dbbe029436e4f08293dd0a",
-        "marker": "cardpack_51874cd889f906c2d6d9"
-      },
-      {
-        "name": "expanded-0009.txt",
-        "cards": 500,
-        "chars": 155606,
-        "sha256": "8ee5662a1e39002e84fa37dacca46199816f4b3b2bcf6d8fc5afedcd51fa591a",
-        "marker": "cardpack_a6c545500960376a6c42"
-      },
-      {
-        "name": "expanded-0010.txt",
-        "cards": 500,
-        "chars": 155586,
-        "sha256": "2529b49af37689b03fc4eadf68c5bb92943768ef759464e7e7a22e94e20283f5",
-        "marker": "cardpack_043b4e655e6a699ac853"
-      },
-      {
-        "name": "expanded-0011.txt",
-        "cards": 500,
-        "chars": 155556,
-        "sha256": "3111e6253d4543490a466ddb2deed9de05830a506a9cf2c1a65262bc01af7080",
-        "marker": "cardpack_1f5d689cec7ec6360bc0"
-      },
-      {
-        "name": "expanded-0012.txt",
-        "cards": 500,
-        "chars": 155555,
-        "sha256": "7487bb33970ef0032a0334c15bf8edab2d4fa4a7260440919ce44576eaff693b",
-        "marker": "cardpack_fa8b8282ef8626409b38"
-      },
-      {
-        "name": "expanded-0013.txt",
-        "cards": 500,
-        "chars": 155630,
-        "sha256": "2b9689ed0e6e02bbb5d81073b1a42367a2fdb9e17ebeb4c485af7056c2a4d1c7",
-        "marker": "cardpack_50ff6b6a447b233fceac"
-      },
-      {
-        "name": "expanded-0014.txt",
-        "cards": 500,
-        "chars": 155506,
-        "sha256": "50b0452906eaeadb28fec0cec9a3c60efc705d28813d4e2c34d9bb77f475fd63",
-        "marker": "cardpack_1677c2deb540f653ae5e"
-      },
-      {
-        "name": "expanded-0015.txt",
-        "cards": 500,
-        "chars": 155578,
-        "sha256": "77ee962dcf8a4d73398df3c5b86d26b1c0bdf2120ba7da52c197b56ffc5c8250",
-        "marker": "cardpack_f22102cd4f511272094a"
-      },
-      {
-        "name": "expanded-0016.txt",
-        "cards": 500,
-        "chars": 155631,
-        "sha256": "e25597441f9be97437aacf9facdf0a02bd172da73b2107d1fca1bc5f3bc248dc",
-        "marker": "cardpack_66c6dfe860387495c667"
-      },
-      {
-        "name": "expanded-0017.txt",
-        "cards": 500,
-        "chars": 155602,
-        "sha256": "1d89ee6686beea883f49c120b6c980e89ff57d9cb100d00e2136029908b8c4c9",
-        "marker": "cardpack_c79a9e3450455104454f"
-      },
-      {
-        "name": "expanded-0018.txt",
-        "cards": 500,
-        "chars": 155565,
-        "sha256": "e980fa5395db29a6214650b2a0232e67abe97638c9012fdfb8529c707f69469b",
-        "marker": "cardpack_4af59729c4a3fbfc6787"
-      },
-      {
-        "name": "expanded-0019.txt",
-        "cards": 500,
-        "chars": 155547,
-        "sha256": "986c22a779064ca746af0dbfd88c4373bd7ee460681beff382608b8041bf227f",
-        "marker": "cardpack_a7ed8af829065e5b62bb"
-      },
-      {
-        "name": "expanded-0020.txt",
-        "cards": 500,
-        "chars": 155578,
-        "sha256": "3ec7fa7337eeada5945ce383e93153696e9046b148842b1819035466288ddcb3",
-        "marker": "cardpack_31cdb24166c8034c4a55"
-      },
-      {
-        "name": "expanded-0021.txt",
-        "cards": 500,
-        "chars": 155465,
-        "sha256": "615a9cdec964b8eef624baa9a96ac9989661474c46af9f6c4030d2acc6578551",
-        "marker": "cardpack_6bc97436b9959411a9a9"
-      },
-      {
-        "name": "expanded-0022.txt",
-        "cards": 500,
-        "chars": 155556,
-        "sha256": "6fd91313d0fbaebf16a13e51c3fb8d738507e7c97c947b552395ac0b1b6054ac",
-        "marker": "cardpack_6e2395ae349d74b5e4f5"
-      },
-      {
-        "name": "expanded-0023.txt",
-        "cards": 500,
-        "chars": 155628,
-        "sha256": "e00b0b43f71537521d6a15fdd024f0de93516d28996d79385a9f2605f38107f1",
-        "marker": "cardpack_1ec2fe1376e0d272fb0b"
-      },
-      {
-        "name": "expanded-0024.txt",
-        "cards": 500,
-        "chars": 155512,
-        "sha256": "5cfde2b076f9c7569ccd722861e33b52184cb950cb38de3d363d649fa88f23f3",
-        "marker": "cardpack_55ebb0d88c19eb1a120d"
-      },
-      {
-        "name": "expanded-0025.txt",
-        "cards": 500,
-        "chars": 155621,
-        "sha256": "37b04a5272bf2c7dedb4330805ebdf7e6df7a275d765a71b5dca171c6e3af3e6",
-        "marker": "cardpack_af3e3de8c6bfb25aa158"
-      },
-      {
-        "name": "expanded-0026.txt",
-        "cards": 500,
-        "chars": 155559,
-        "sha256": "1beb4b98111e3cc792ad4959953ab0a7b95eb6adda85d631f9f447c1aef7003b",
-        "marker": "cardpack_c6f07bb51f7eec61e909"
-      },
-      {
-        "name": "expanded-0027.txt",
-        "cards": 500,
-        "chars": 155498,
-        "sha256": "6b1e4633c4d12d29cb478530bdc817910676dec56a8f4caf7fc0dcf7cfc7fecf",
-        "marker": "cardpack_01bf0910b2d684ffddb5"
-      },
-      {
-        "name": "expanded-0028.txt",
-        "cards": 500,
-        "chars": 155542,
-        "sha256": "83746e5119031c6f7e4dc2628dfe43dc0adaa8f084f8c549ebca6483e4ba7ea0",
-        "marker": "cardpack_c01cc50b851e65099621"
-      },
-      {
-        "name": "expanded-0029.txt",
-        "cards": 500,
-        "chars": 155589,
-        "sha256": "74c1b377671d31dfec7ec4620f5a74d452ee44bbaa1accd32ab756f9c7a57838",
-        "marker": "cardpack_4beb6d65759d72794f85"
-      },
-      {
-        "name": "expanded-0030.txt",
-        "cards": 500,
-        "chars": 155539,
-        "sha256": "b5ce9fa112582c82ac74b730311e46c1f37baaf0fc8d913415e9b3fc2812a8b2",
-        "marker": "cardpack_9674d0035f9136400853"
-      },
-      {
-        "name": "expanded-0031.txt",
-        "cards": 500,
-        "chars": 155589,
-        "sha256": "ef7b34d6c1b6ef2a18a8cd31fed7a96e1d09d8cca466d2cc62c88ad1ceaba39b",
-        "marker": "cardpack_cd1a8634b963dff0fd72"
-      },
-      {
-        "name": "expanded-0032.txt",
-        "cards": 500,
-        "chars": 155407,
-        "sha256": "d8f68f5be8f1f9b69e7a339517e536238e740b1a21123b647f5233d0f34adcce",
-        "marker": "cardpack_7cd87c337a71c7ea5829"
-      },
-      {
-        "name": "expanded-0033.txt",
-        "cards": 500,
-        "chars": 155633,
-        "sha256": "bc1767ba81825c52adef598914200bb3815c60bb5283ac39fe3d8fbd206a97a5",
-        "marker": "cardpack_3e8d9f9140041c2d1663"
-      },
-      {
-        "name": "expanded-0034.txt",
-        "cards": 500,
-        "chars": 155366,
-        "sha256": "0f97825d5a1805db751302a3fae5bd8165c1a2cab44375ee0ccdc1bc7e6bf121",
-        "marker": "cardpack_3a8f6bc290047d416445"
-      },
-      {
-        "name": "expanded-0035.txt",
-        "cards": 500,
-        "chars": 155677,
-        "sha256": "8e6aef962603d494bbf8ae577f87ea2153c4c2cf3f5635ce2de3b457c4513883",
-        "marker": "cardpack_78a7794f3a776f140be5"
-      },
-      {
-        "name": "expanded-0036.txt",
-        "cards": 500,
-        "chars": 155420,
-        "sha256": "78c4c52ab1592e84412548c31e8e7c64c971a3cfbc2b8e443ff488f5f1e49034",
-        "marker": "cardpack_e1b3a24aa748f42c052c"
-      },
-      {
-        "name": "expanded-0037.txt",
-        "cards": 500,
-        "chars": 155688,
-        "sha256": "4d5e90776a5aab9106e35355fa10367e90653dbe2b86cd6394f37bfd588a4bf7",
-        "marker": "cardpack_97a76d6ee4e7cc59e7ab"
-      },
-      {
-        "name": "expanded-0038.txt",
-        "cards": 500,
-        "chars": 155480,
-        "sha256": "e8f52eb11fbe807d3be858a9ff78e339c6f9b3a3c1232688525b5c5669e18744",
-        "marker": "cardpack_8c3c131e72d4e92a5bdb"
-      },
-      {
-        "name": "expanded-0039.txt",
-        "cards": 500,
-        "chars": 155534,
-        "sha256": "e801e133100debd9eaf46318de9fd29b9133c0410c93afcb0e07c02c7eb6752f",
-        "marker": "cardpack_8968c1c67b87362c0af7"
-      },
-      {
-        "name": "expanded-0040.txt",
-        "cards": 387,
-        "chars": 120474,
-        "sha256": "2cf48d4680c0227a6ff79785fb034ec9798bfc4cd6a79f2a0805cbe607d912ea",
-        "marker": "cardpack_d1907ccaf6320bdfb37b"
-      }
-    ]
+    "batches": []
   },
   "procedures": [
     "SOP-AUTO-001",
     "SOP-BUSINESS-001",
+    "SOP-COLLISION-001",
     "SOP-CONFLICT-001",
+    "SOP-DOWNTIME-001",
+    "SOP-FRAUD-SIGNAL-001",
+    "SOP-INVENTORY-001",
+    "SOP-LARGE-LOSS-001",
+    "SOP-LATE-FILING-001",
+    "SOP-NEW-POLICY-001",
+    "SOP-OUTSTANDING-001",
+    "SOP-PRIVACY-001",
     "SOP-PROPERTY-001",
-    "SOP-REVIEW-001"
-  ]
+    "SOP-REPEAT-CLAIMANT-001",
+    "SOP-REVIEW-001",
+    "SOP-THEFT-001",
+    "SOP-WATER-001"
+  ],
+  "tickets": {
+    "tickets": 2000,
+    "id_field": "ticket_id",
+    "label_fields": [
+      "fraud_flag",
+      "resolution"
+    ],
+    "workbook": "artifacts/synapt/ticketing-capstone1/claims_tickets_capstone1.xlsx",
+    "rebuild": "python scripts/make_ticketing_sample.py --output artifacts/synapt/ticketing-capstone1 --per-type 400 --natural --name claims_tickets_capstone1",
+    "xlsx_sha256": "d267417f14eea94fa03d4faea204e97cf1d90011cfddb0e2b106cd5abc140c4a",
+    "columns": {
+      "id": [
+        "ticket_id"
+      ],
+      "embed": [
+        "title",
+        "description",
+        "category",
+        "region"
+      ],
+      "predict": [
+        "resolution",
+        "fraud_flag"
+      ],
+      "store_only": "the other 9 columns"
+    }
+  }
 }

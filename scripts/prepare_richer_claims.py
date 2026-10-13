@@ -18,8 +18,8 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from claims.fraud_features import file_digest, rows_digest
-from claims.richer_data import (
+from claims.ml.fraud_features import file_digest, rows_digest
+from claims.ml.richer_data import (
     EXPECTED_MENDELEY_COLUMNS,
     KAGGLE_ID,
     MENDELEY_ID,

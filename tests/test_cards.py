@@ -1,6 +1,6 @@
 import pytest
 
-from claims.cards import (
+from claims.corpus.cards import (
     ALIAS,
     amount_band,
     claim_alias,
@@ -53,7 +53,7 @@ def test_ids_are_found_in_order_without_duplicates_and_legacy_ids_still_count():
 
 
 def test_region_tokens_are_opaque_unique_and_never_a_place_name():
-    from claims.cards import STATE_NAMES
+    from claims.corpus.cards import STATE_NAMES
 
     tokens = {code: region_token(code) for code in STATE_NAMES}
     assert len(set(tokens.values())) == len(STATE_NAMES)

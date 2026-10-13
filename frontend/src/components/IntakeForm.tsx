@@ -14,115 +14,17 @@ import {
   SlidersHorizontal,
   X,
 } from 'lucide-react'
-import type { ClaimInput, ClaimType, DemoCase, SearchFilters } from '../lib/api'
+import type { ClaimType, DemoCase } from '../lib/api'
+import { EMPTY_FILTERS, EMPTY_FORM, buildClaim, buildFilters, formFromClaim, type FilterState, type FormState } from '../lib/claimForm'
 import { cx, daysBetween, money, todayLocal } from '../lib/format'
 import { STATES, stateCode } from '../lib/states'
-import { Card, DataView, ErrorBox } from './ui'
+import { Card, ErrorBox } from './ui'
+import { IntakeSentence } from './IntakeSentence'
 
-export interface FormState {
-  description: string
-  claim_type: '' | ClaimType
-  state: string
-  incident_date: string
-  claim_filed_date: string
-  claim_amount: string
-  deductible: string
-  previous_claims_count: string
-  policyholder_tenure_years: string
-  provided_documents: string[]
-}
-
-export interface FilterState {
-  claim_type: '' | ClaimType
-  state: string
-  claim_status: '' | 'approved' | 'denied' | 'pending' | 'under_review'
-  min_amount: string
-  max_amount: string
-  min_previous_claims: string
-  max_previous_claims: string
-}
-
-export const EMPTY_FORM: FormState = {
-  description: '',
-  claim_type: '',
-  state: '',
-  incident_date: '',
-  claim_filed_date: '',
-  claim_amount: '',
-  deductible: '',
-  previous_claims_count: '',
-  policyholder_tenure_years: '',
-  provided_documents: [],
-}
-
-export const EMPTY_FILTERS: FilterState = {
-  claim_type: '',
-  state: '',
-  claim_status: '',
-  min_amount: '',
-  max_amount: '',
-  min_previous_claims: '',
-  max_previous_claims: '',
-}
-
-export const formFromClaim = (claim: ClaimInput): FormState => ({
-  description: claim.description ?? '',
-  claim_type: claim.claim_type ?? '',
-  state: claim.state ?? '',
-  incident_date: claim.incident_date ?? '',
-  claim_filed_date: claim.claim_filed_date ?? '',
-  claim_amount: String(claim.claim_amount ?? ''),
-  deductible: String(claim.deductible ?? ''),
-  previous_claims_count: String(claim.previous_claims_count ?? ''),
-  policyholder_tenure_years: String(claim.policyholder_tenure_years ?? ''),
-  provided_documents: Array.isArray(claim.provided_documents) ? claim.provided_documents : [],
-})
-
-export function buildClaim(form: FormState): ClaimInput {
-  const claim: ClaimInput = {
-    description: form.description.trim(),
-    claim_type: form.claim_type || null,
-    state: stateCode(form.state),
-    incident_date: form.incident_date,
-    claim_filed_date: form.claim_filed_date,
-    claim_amount: Number(form.claim_amount),
-    deductible: Number(form.deductible),
-    previous_claims_count: Number(form.previous_claims_count),
-    policyholder_tenure_years: Number(form.policyholder_tenure_years),
-    provided_documents: form.provided_documents.map((d) => d.trim()).filter(Boolean),
-  }
-  if (claim.description.length < 10) throw new Error('Describe the incident in at least 10 characters.')
-  if (claim.description.length > 6000) throw new Error('Keep the incident description within 6000 characters.')
-  if (!STATES.some(([code]) => code === claim.state)) throw new Error('Enter a two-letter US state code, for example CA.')
-  if (!claim.incident_date || !claim.claim_filed_date) throw new Error('Enter both the incident and filing dates.')
-  if (claim.claim_filed_date < claim.incident_date) throw new Error('Filing date must be on or after the incident date.')
-  if (claim.incident_date > todayLocal() || claim.claim_filed_date > todayLocal()) throw new Error('Dates cannot be in the future.')
-  for (const key of ['claim_amount', 'deductible', 'previous_claims_count', 'policyholder_tenure_years'] as const)
-    if (form[key].trim() === '' || !Number.isFinite(claim[key]) || claim[key] < 0) throw new Error(`Enter a valid ${key.replace(/_/g, ' ')}.`)
-  if (claim.claim_amount > 1_000_000_000 || claim.deductible > 1_000_000_000) throw new Error('Amounts cannot exceed one billion dollars.')
-  if (!Number.isInteger(claim.previous_claims_count) || claim.previous_claims_count > 1000) throw new Error('Previous claims must be a whole number from 0 to 1000.')
-  if (claim.policyholder_tenure_years > 100) throw new Error('Tenure cannot exceed 100 years.')
-  if (claim.provided_documents.length > 50) throw new Error('List at most 50 available documents.')
-  return claim
-}
-
-export function buildFilters(f: FilterState): SearchFilters {
-  const filters: SearchFilters = {}
-  if (f.claim_type) filters.claim_type = f.claim_type
-  if (f.state.trim()) filters.state = f.state.trim().toUpperCase()
-  if (f.claim_status) filters.claim_status = f.claim_status
-  for (const key of ['min_amount', 'max_amount', 'min_previous_claims', 'max_previous_claims'] as const)
-    if (f[key] !== '') filters[key] = Number(f[key])
-  if (filters.min_amount !== undefined && filters.max_amount !== undefined && filters.min_amount > filters.max_amount)
-    throw new Error('Minimum amount cannot exceed maximum amount.')
-  if (
-    filters.min_previous_claims !== undefined &&
-    filters.max_previous_claims !== undefined &&
-    filters.min_previous_claims > filters.max_previous_claims
-  )
-    throw new Error('Minimum prior claims cannot exceed maximum prior claims.')
-  return filters
-}
+// The form model and its single validator live in lib/claimForm.ts; they are re-exported here because
+// this is where the rest of the app (and its tests) have always imported them from.
+export { EMPTY_FILTERS, EMPTY_FORM, buildClaim, buildFilters, formFromClaim }
+export type { FilterState, FormState }
 
 const TYPES: { value: '' | ClaimType; label: string }[] = [
   { value: '', label: 'Auto-detect' },
@@ -150,7 +52,7 @@ const demoVisual = (id: string) => {
   }
 }
 
-export function IntakeForm({
+function ClassicForm({
   form,
   setForm,
   filters,
@@ -165,6 +67,7 @@ export function IntakeForm({
   error,
   onSubmit,
   onReset,
+  onSentence,
 }: {
   form: FormState
   setForm: (f: FormState) => void
@@ -180,9 +83,8 @@ export function IntakeForm({
   error: string | null
   onSubmit: (nextForm: FormState) => void
   onReset: () => void
+  onSentence: () => void
 }) {
-  const [step, setStep] = useState(0)
-  const [expert, setExpert] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [docDraft, setDocDraft] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -238,10 +140,9 @@ export function IntakeForm({
     if (filters.state && !/^[A-Z]{2}$/.test(filters.state)) custom('f-state', 'Enter a two-letter state code or leave this filter empty.')
     if (filters.min_amount !== '' && filters.max_amount !== '' && Number(filters.min_amount) > Number(filters.max_amount)) custom('f-max-amt', 'Maximum amount must be at least the minimum amount.')
     if (filters.min_previous_claims !== '' && filters.max_previous_claims !== '' && Number(filters.min_previous_claims) > Number(filters.max_previous_claims)) custom('f-max-h', 'Maximum prior claims must be at least the minimum.')
-    const invalid = controls.filter((control) => (!expert && step === 0 ? control.id === 'description' : true) && !control.checkValidity())
+    const invalid = controls.filter((control) => !control.checkValidity())
     if (invalid.length) {
       setFieldErrors(Object.fromEntries(invalid.map((control) => [control.id, control.validationMessage])))
-      if (!expert) setStep(invalid[0].id === 'description' ? 0 : 1)
       requestAnimationFrame(() => invalid[0].focus())
       if (invalid[0].id.startsWith('f-') && !showFilters) {
         setShowFilters(true)
@@ -249,7 +150,6 @@ export function IntakeForm({
       } else invalid[0].focus()
       return
     }
-    if (!expert && step === 0) { setStep(1); requestAnimationFrame(() => document.getElementById('state')?.focus()); return }
     const documentName = docDraft.trim()
     if (documentName && !form.provided_documents.includes(documentName) && form.provided_documents.length >= 50) {
       setFieldErrors({ 'doc-input': 'List at most 50 available documents. Remove one before adding another.' })
@@ -262,7 +162,6 @@ export function IntakeForm({
     setFieldErrors({})
     setForm(nextForm)
     setDocDraft('')
-    if (!expert && step < 2) { setStep(2); requestAnimationFrame(() => document.getElementById('draft-review')?.focus()); return }
     onSubmit(nextForm)
   }
 
@@ -275,11 +174,10 @@ export function IntakeForm({
           </span>
           New investigation
         </h2>
-        <button type="button" className="btn sm" aria-pressed={expert} onClick={() => { setExpert(v => !v) }}>{expert ? 'Guided entry' : 'All fields'}</button>
+        <button type="button" className="btn sm" onClick={onSentence}>Back to the sentence</button>
       </div>
       <div className="card-body" id="intake-body">
-        <p className="section-desc">Describe the incident, confirm details, then review before building a brief.</p>
-        {!expert && <nav className="composer-steps" aria-label="Intake steps">{['Incident', 'Details', 'Review'].map((name, i) => <span key={name} aria-current={step === i ? 'step' : undefined}>{i + 1}. {name}</span>)}</nav>}
+        <p className="section-desc">Every field on one page. Describe the incident, fill in the details, then build the brief.</p>
         <details className="form-section"><summary>Try an example · Optional</summary>
           <div className="demo-grid">
             {demoLoading && <p role="status" style={{ gridColumn: '1 / -1' }}>Loading demo cases…</p>}
@@ -313,7 +211,7 @@ export function IntakeForm({
           if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement) control.setCustomValidity('')
         }}>
           <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-            <div hidden={!expert && step !== 0}>
+            <div>
             <div className="field">
               <label htmlFor="description">
                 Incident description <span className="counter">{form.description.length}/6000</span>
@@ -345,7 +243,7 @@ export function IntakeForm({
               </div>
             </div>
 
-            </div><div hidden={!expert && step !== 1}>
+            </div><div>
             <div className="field-row">
               <div className="field">
                 <label htmlFor="state">US state</label>
@@ -528,10 +426,8 @@ export function IntakeForm({
                 </div>
 
             </div>
-            {!expert && step === 2 && <section id="draft-review" tabIndex={-1}><h3>Review the draft</h3><p className="section-desc">Check these inputs before submission. Document names mean reported available; content has not been attached, extracted or reviewed.</p><DataView value={{ incident: form.description, type: form.claim_type || 'Auto-detect', state: stateCode(form.state), incident_date: form.incident_date, filing_date: form.claim_filed_date, claim_amount: form.claim_amount, deductible: form.deductible, previous_claims: form.previous_claims_count, policyholder_tenure_years: form.policyholder_tenure_years, documents_reported_available: form.provided_documents, historical_comparison_filters: filters }} /></section>}
             <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
               <ErrorBox message={error} />
-              {!expert && step > 0 && <button type="button" className="btn" onClick={() => { setStep(n => n - 1); requestAnimationFrame(() => document.getElementById(step === 1 ? 'description' : 'state')?.focus()) }}>Back</button>}
               <button className="btn primary lg" type="submit" id="investigate-button">
                 {busy ? (
                   <>
@@ -539,7 +435,7 @@ export function IntakeForm({
                   </>
                 ) : (
                   <>
-                    {!expert && step < 2 ? 'Continue' : 'Build investigation brief'} <ArrowRight size={17} />
+                    Build investigation brief <ArrowRight size={17} />
                   </>
                 )}
               </button>
@@ -553,4 +449,25 @@ export function IntakeForm({
       </div>
     </Card>
   )
+}
+
+export function IntakeForm(props: {
+  form: FormState
+  setForm: (f: FormState) => void
+  filters: FilterState
+  setFilters: (f: FilterState) => void
+  demoCases: DemoCase[]
+  demoLoading: boolean
+  demoError: string | null
+  onRetryDemos: () => void
+  selectedDemo: string | null
+  onDemo: (index: number) => void
+  busy: boolean
+  error: string | null
+  onSubmit: (nextForm: FormState) => void
+  onReset: () => void
+}) {
+  // The claim sentence is the way in; the classic all-fields form stays one click away.
+  const [classic, setClassic] = useState(false)
+  return classic ? <ClassicForm {...props} onSentence={() => setClassic(false)} /> : <IntakeSentence {...props} onClassic={() => setClassic(true)} />
 }

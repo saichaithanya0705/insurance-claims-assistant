@@ -168,7 +168,7 @@ fraud accuracy or point-in-time label maturity.
 uv sync
 uv run python scripts/experiment_fraud_features.py --verify-only
 uv run pytest -q
-uv run ruff check src/claims/fraud_features.py scripts/experiment_fraud_features.py scripts/retrain_models.py tests/test_fraud_features.py
+uv run ruff check src/claims/ml/fraud_features.py scripts/experiment_fraud_features.py scripts/retrain_models.py tests/test_fraud_features.py
 ```
 
 The default experiment command refuses to retune a reserved or consumed holdout.

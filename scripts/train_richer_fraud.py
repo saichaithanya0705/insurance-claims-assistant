@@ -17,9 +17,9 @@ from threadpoolctl import threadpool_limits
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from claims.fraud_features import file_digest, rows_digest
-from claims.richer_data import MENDELEY_ID, production_blockers, verified_records
-from claims.richer_fraud import (
+from claims.ml.fraud_features import file_digest, rows_digest
+from claims.ml.richer_data import MENDELEY_ID, production_blockers, verified_records
+from claims.ml.richer_fraud import (
     CONFIGURATIONS,
     ROLE_NAMES,
     SEEDS,

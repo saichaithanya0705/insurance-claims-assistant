@@ -12,16 +12,17 @@ const REPO = path.resolve(process.argv[2] || ".");
 const OUT = path.join(REPO, "docs", "Claims_Assistant_Panel_Deck.pptx");
 
 const FACTS = {
-  backendTests: 169,
-  frontendTests: 16,
+  backendTests: 905,
+  frontendTests: 171,
   golden: "4 of 4",
   deepeval: "12 of 12 metrics ran, 8 pass",
   deepevalDetail: "",
-  precision: {
-    // share of Synapt's returned cards that match the query claim, versus a random pair of cards
-    labels: ["Claim type", "Amount band", "State", "Prior claims"],
-    synapt: [34, 23, 7, 35],
-    random: [20, 16, 4, 35],
+  // The data split in Synapt, measured from its graph on 13 October 2026 (docs/SYNAPT_INTEGRATION.md).
+  split: {
+    cardShareOfChunks: "99.6%", // the 20 claim-card documents' share of the provider's chunks
+    cardLinks: 55, // graph links from the 10,020 card chunks
+    sopLinks: 135, // graph links from the 17 procedure chunks
+    sops: 17, procedures: 21, steps: 93, tickets: "2,000",
   },
 };
 
@@ -83,7 +84,7 @@ section("Opening");
 let s = pres.addSlide({ masterName: "DARK", sectionTitle: "Opening" });
 s.addText("AI-Powered Insurance Claims Assistant", { x: 0.8, y: 1.55, w: 11.6, h: 1.1, fontFace: "Cambria", fontSize: 44, bold: true, color: WHITE, margin: 0, isTextBox: true });
 s.addText("Evidence-led investigation over 100 million claims, with Synapt knowledge and a human review gate", { x: 0.8, y: 2.75, w: 10.5, h: 0.9, fontSize: 22, color: "CFE3E6", margin: 0, isTextBox: true });
-[["100 million", "claims queried in place"], ["1,000", "claim cards in Synapt"], ["8 stages", "and one human gate"]].forEach(([big, small], i) => {
+[["100 million", "claims queried in place"], [`${FACTS.split.tickets}`, "tickets in Synapt"], ["8 stages", "and one human gate"]].forEach(([big, small], i) => {
   const x = 0.8 + i * 4.0;
   s.addShape(pres.ShapeType.roundRect, { x, y: 4.45, w: 3.7, h: 1.6, rectRadius: 0.12, fill: { color: TEAL_DK }, line: { color: TEAL_DK } });
   s.addText(big, { x: x + 0.3, y: 4.6, w: 3.1, h: 0.8, fontFace: "Cambria", fontSize: 34, bold: true, color: AMBER, margin: 0, isTextBox: true });
@@ -118,7 +119,7 @@ s.addText("One service, three stores, one human gate", { placeholder: "title" })
 s.addImage({ path: path.join(REPO, "docs", "architecture.png"), x: 0.6, y: 1.4, w: 8.2, h: 5.51, objectName: "Architecture diagram", altText: "Architecture: UI, FastAPI, LangGraph workflow, Parquet, Synapt, models, NVIDIA NIM, SQLite and the feedback loop" });
 const side = [
   ["Parquet, 100M rows", "Authoritative for filters, similar claims, every number shown, and model training."],
-  ["Synapt, over MCP", "Procedures, 1,000 claim cards for semantic ranking, reviewed lessons."],
+  ["Synapt, over MCP", "Procedures as documents (the knowledge graph), past claims in its ticket store, reviewed lessons."],
   ["Human gate", "LangGraph pauses; the handler accepts or revises. Acceptance is blocked on failed validation."],
 ];
 side.forEach(([h, t], i) => {
@@ -127,7 +128,7 @@ side.forEach(([h, t], i) => {
   s.addText(h, { x: 9.85, y: y - 0.02, w: 2.9, h: 0.45, fontSize: 18, bold: true, color: INK, margin: 0, isTextBox: true });
   s.addText(t, { x: 9.85, y: y + 0.45, w: 2.9, h: 1.05, fontSize: 14, color: SLATE, valign: "top", margin: 0, isTextBox: true });
 });
-notes(s, "(1:15) A handler uses the React UI served by one FastAPI service. A LangGraph workflow runs eight stages and pauses for a person. Three stores each do what they can: the Parquet file is the authority for the 100 million claims, Synapt holds knowledge, SQLite holds runs and audit. Synapt cannot hold 100 million claims through its text-ingestion tool, so we put the right data in the right place. Models write the brief; a second, different model judges it.");
+notes(s, "(1:15) A handler uses the React UI served by one FastAPI service. A LangGraph workflow runs eight stages and pauses for a person. Three stores each do what they can: the Parquet file is the authority for the 100 million claims, Synapt holds knowledge, SQLite holds runs and audit. Synapt holds procedures as documents, from which it builds the knowledge graph, and a sample of settled claims in its ticket store; the 100 million claims stay in Parquet. Models write the brief; a second, different model judges it.");
 
 // =============== 4. Retrieval ===============
 s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Problem and design" });
@@ -140,7 +141,7 @@ s.addText("Hybrid search over 100 million claims in 3 to 5 seconds", { placehold
 });
 const steps = [
   ["SQL filters and candidates", "Type, state, status, amount, history. Only claims settled before this one was filed qualify."],
-  ["Synapt semantic ranking", "Cards similar to the claim; looked up under the same filters, so nothing bypasses them."],
+  ["Synapt semantic ranking", "Past claims in Synapt's ticket store closest to this one; looked up under the same filters, so nothing bypasses them."],
   ["Reciprocal-rank fusion", "Keyword 1, numeric similarity 1, Synapt 0.5. The five closest come first."],
   ["Related by meaning", "Up to three more that Synapt ranks similar, labelled with their Synapt rank."],
 ];
@@ -160,33 +161,30 @@ notes(s, "(1:30) Search never loads the file into memory. DuckDB scans it and on
 // =============== 5. Synapt ===============
 section("Synapt");
 s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Synapt" });
-s.addText("Synapt: what broke, and what we measured", { placeholder: "title" });
+s.addText("Synapt: the right data in the right store", { placeholder: "title" });
 const blocks = [
-  ["Holds", "5 procedures, 1,000 claim cards (one per chunk), reviewed handler lessons."],
-  ["Broke", "Synapt masks personal-looking text: digit IDs became phone numbers, upper-case IDs became organisations, state names became locations."],
-  ["Fixed", "Letters-only lower-case aliases, an opaque region token, one card per chunk. Found with a probe document, verified on 1,000 uploads."],
+  ["Documents", `${FACTS.split.sops} handling procedures. Synapt builds the knowledge graph from them: ${FACTS.split.procedures} procedures, ${FACTS.split.steps} ordered steps. Cited as evidence.`],
+  ["Was wrong", "Claim rows were stored as text cards beside the procedures. Review feedback said the split was wrong, and the graph agreed."],
+  ["Tickets", `${FACTS.split.tickets} settled past claims in the ticket store. The claim is sent as one ticket; the closest past claims come back.`],
 ];
 blocks.forEach(([h, t], i) => {
   const y = 1.5 + i * 1.7;
   card(s, 0.6, y, 5.6, 1.5, i === 1 ? "FBE7E5" : MINT);
-  s.addText(h, { x: 0.85, y: y + 0.12, w: 1.3, h: 0.4, fontSize: 18, bold: true, color: i === 1 ? ROSE : TEAL_DK, margin: 0, isTextBox: true });
+  s.addText(h, { x: 0.85, y: y + 0.12, w: 2.4, h: 0.4, fontSize: 18, bold: true, color: i === 1 ? ROSE : TEAL_DK, margin: 0, isTextBox: true });
   s.addText(t, { x: 0.85, y: y + 0.52, w: 5.1, h: 0.95, fontSize: 14, color: INK, valign: "top", margin: 0, isTextBox: true });
 });
-s.addChart(pres.charts.BAR, [
-  { name: "Synapt's returned cards", labels: FACTS.precision.labels, values: FACTS.precision.synapt },
-  { name: "Random pair of cards", labels: FACTS.precision.labels, values: FACTS.precision.random },
-], {
-  x: 6.55, y: 1.4, w: 6.2, h: 4.5, barDir: "col", barGrouping: "clustered", barGapWidthPct: 60,
-  chartColors: [TEAL, "AEBBC0"], showTitle: true, title: "Share of returned cards that match the query claim (%)",
-  titleFontSize: 14, titleColor: INK, titleFontFace: "+mn-lt",
-  showValue: true, dataLabelPosition: "outEnd", dataLabelFontSize: 12, dataLabelColor: INK, dataLabelFontFace: "+mn-lt",
-  catAxisLabelColor: INK, catAxisLabelFontSize: 12, catAxisLabelFontFace: "+mn-lt",
-  valAxisLabelColor: SLATE, valAxisLabelFontSize: 11, valAxisLabelFontFace: "+mn-lt", valAxisMaxVal: 50,
-  valGridLine: { color: "DCE6E8", size: 0.75 }, catGridLine: { style: "none" },
-  showLegend: true, legendPos: "b", legendFontSize: 12, legendColor: INK, legendFontFace: "+mn-lt",
+[
+  [FACTS.split.cardShareOfChunks, "of the provider's chunks were claim cards"],
+  [`${FACTS.split.cardLinks} vs ${FACTS.split.sopLinks}`, "graph links: 10,020 card chunks vs 17 procedures"],
+  ["13 Oct", "cards deleted; claims moved to the ticket store"],
+].forEach(([big, small], i) => {
+  const y = 1.5 + i * 1.5;
+  card(s, 6.55, y, 6.2, 1.3);
+  s.addText(big, { x: 6.8, y: y + 0.12, w: 5.7, h: 0.65, fontFace: "Cambria", fontSize: 30, bold: true, color: TEAL_DK, margin: 0, isTextBox: true });
+  s.addText(small, { x: 6.8, y: y + 0.78, w: 5.7, h: 0.4, fontSize: 14, color: SLATE, margin: 0, isTextBox: true });
 });
-s.addText("A real but mild signal: about 1.7x chance on type and state, 1.5x on amount band, none on prior claims. That is why its weight is 0.5 and its extra picks are shown separately.", { x: 6.55, y: 6.0, w: 6.2, h: 0.8, fontSize: 14, italic: true, color: TEAL_DK, valign: "top", margin: 0, isTextBox: true });
-notes(s, "(1:15) Synapt holds procedures, a stratified 1,000-card sample of the 100 million claims, and handler lessons. It cannot hold all 100 million: its ingestion takes about 100 cards per call and each call takes minutes. The surprise was masking. I uploaded one probe document with a dozen identifier formats, read back what survived, and redesigned the IDs. The chart is the honest measurement: when I ask Synapt for cards similar to a claim, they match its claim type about 1.7 times as often as chance and its amount band about 1.5 times, and are no better than chance on prior claims (60 queries, no failures). Dense embeddings are weak on numeric attributes, so I weighted it down and show its picks separately instead of letting them displace better matches.");
+s.addText("Ticket labels never beat the majority class on this data, so they are not shown; the past claims are used only to rank.", { x: 6.55, y: 6.0, w: 6.2, h: 0.8, fontSize: 14, italic: true, color: TEAL_DK, valign: "top", margin: 0, isTextBox: true });
+notes(s, "(1:15) Synapt has two stores for two kinds of content. Documents are for knowledge: the seventeen procedures, from which Synapt builds the graph of procedures and ordered steps that every brief cites. Settled claims are cases with outcomes, which is what the ticket store is for. I first put ten thousand claim rows into the documents as text cards. The review said that split was wrong, and the graph shows why: the cards were 99.6 percent of the chunks but gave 55 graph links, against 135 from seventeen procedures. So I uploaded two thousand settled claims through the Ticketing source, checked that the procedures and graph were untouched, and deleted the cards. Now the passage retriever sends the claim as one ticket, ticket-only mode, no model call, and the closest past claims are looked up in Parquet under the handler's filters. I measured the ticket labels against the majority class and they add nothing, so the app does not show them.");
 
 // =============== 6. Live demo ===============
 section("Demo and evidence");
@@ -255,7 +253,7 @@ const cols = [
     "Rate an accepted brief",
     "Administrator promotes the lesson",
     "Cited as evidence next time, and ingested into Synapt",
-    "Verified live: Synapt 21 to 22 documents",
+    "Answer ratings sent to Synapt as feedback",
   ]],
 ];
 cols.forEach(([h, color, items], i) => {
@@ -268,7 +266,7 @@ cols.forEach(([h, color, items], i) => {
   });
 });
 s.addText("Evaluation, the guardrail catch and the feedback loop were exercised on the live system, not only in unit tests.", { x: 0.6, y: 6.1, w: 12.1, h: 0.6, fontSize: 16, italic: true, color: TEAL_DK, valign: "middle", margin: 0, isTextBox: true });
-notes(s, "(1:15) Three kinds of assurance. Evaluated: golden cases and DeepEval, plus a second model judging every live brief. Guarded: strict input checks, mandatory citations, and a validator that caught the model writing that a document had been provided when only its name was received; the brief was held for manual review, and a prompt fix cut that from one in four to none in four. Learning: handler feedback becomes cited evidence, and I verified the Synapt ingestion live.");
+notes(s, "(1:15) Three kinds of assurance. Evaluated: golden cases and DeepEval, plus a second model judging every live brief. Guarded: strict input checks, mandatory citations, and a validator that caught the model writing that a document had been provided when only its name was received; the brief was held for manual review, and a prompt fix cut that from one in four to none in four. Learning: handler feedback becomes cited evidence, and a handler's rating of Synapt's answer goes back to Synapt as feedback.");
 
 // =============== 9. Limits ===============
 section("Close");
@@ -277,13 +275,13 @@ s.addText("Honest limits, and what comes next", { x: 0.8, y: 0.6, w: 11.7, h: 0.
 const lim = [
   ["Limits", AMBER, [
     "Synthetic data: no claim of real-world accuracy",
-    "Synapt holds 1,000 of 100 million claims, so its semantic signal is mild",
+    "Synapt's ticket store holds 2,000 of 100 million claims: a mild ranking signal",
     "Fraud recall is 31%: a screening aid, not a detector",
     "The judge is advisory and probabilistic",
   ]],
   ["Next", "7FD1C7", [
-    "A Synapt ticket-store provider for tabular claims at scale",
-    "A larger card corpus, with precision re-measured",
+    "Episode mining over the ticket store (not yet run)",
+    "A larger ticket store, with its ranking re-measured",
     "DeepEval over real handler runs, not only golden cases",
     "Single sign-on, MFA and multi-tenant isolation",
   ]],
@@ -297,7 +295,7 @@ lim.forEach(([h, color, items], i) => {
   });
 });
 s.addText("Evidence informs. A person decides.", { x: 0.8, y: 6.2, w: 11.7, h: 0.6, fontFace: "Cambria", fontSize: 28, italic: true, color: AMBER, margin: 0, isTextBox: true });
-notes(s, "(0:30) The limits are real and documented. The data is synthetic. Synapt holds a thousand cards, not a hundred million, so its semantic leg is a mild signal that I measured rather than assumed. The fraud model is a screening aid. Next steps are about scale and about evaluating on real handler runs. Close on the design principle: evidence informs, a person decides. Questions.");
+notes(s, "(0:30) The limits are real and documented. The data is synthetic. Synapt's ticket store holds two thousand claims, not a hundred million, so its ranking leg is a mild signal, and episode mining over those tickets has not run yet. The fraud model is a screening aid. Next steps are about scale and about evaluating on real handler runs. Close on the design principle: evidence informs, a person decides. Questions.");
 
 pres.writeFile({ fileName: OUT }).then(async () => {
   // Writing the theme palette into the deck needs the helper that ships with the PowerPoint skill

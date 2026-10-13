@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-from claims.synapt_inventory import (
+from claims.synapt.inventory import (
     build_expected,
     marker_pattern,
     summary_lines,
@@ -30,9 +30,11 @@ def expected():
 class FakeSynapt:
     """Serves what trident_get_stats, trident_cypher and trident_get_chunks return for a provider."""
 
-    def __init__(self, spec=None, masked=True, procedures=("SOP-AUTO-001", "SOP-REVIEW-001"), header_hits=True):
+    def __init__(self, spec=None, masked=True, procedures=("SOP-AUTO-001", "SOP-REVIEW-001"), header_hits=True,
+                 stats_extra=None, extra_docs=()):
         spec = spec or expected()
-        self.docs, self.headers = {}, []
+        self.docs, self.headers = {d["f"]: d for d in extra_docs}, []
+        self.stats_extra = stats_extra or {}
         for i, batch in enumerate(spec["base"]["batches"]):
             self.docs[f"base-{i}.txt"] = {"f": f"base-{i}.txt", "n": batch["cards"],
                                           "linked": batch["cards"], "lo": 0, "hi": batch["chars"] + 294}
@@ -52,7 +54,7 @@ class FakeSynapt:
         self.calls.append(name)
         assert name in {"trident_get_stats", "trident_cypher", "trident_get_chunks"}, "read-only tools only"
         if name == "trident_get_stats":
-            return {"result": json.dumps({"doc_count": len(self.docs) + 2, "chunks": 1_234})}
+            return {"result": json.dumps({"doc_count": len(self.docs) + 2, "chunks": 1_234, **self.stats_extra})}
         if name == "trident_cypher":
             return {"result": json.dumps(sorted(self.docs.values(), key=lambda d: d["hi"]))}
         query = arguments["query"]
@@ -184,3 +186,69 @@ def test_build_expected_describes_local_corpora(tmp_path):
     assert result["base"]["batches"][0] == {"name": "base-0001.txt", "cards": 3, "chars": 300, "sha256": "sha1"}
     assert result["expansion"]["batches"][0]["marker"] == "cardpack_00000000000000000001"
     assert result["expansion"]["batches"][0]["chars"] == 500 and result["procedures"] == ["SOP-A-001"]
+
+
+def test_a_single_corpus_provider_has_no_base_section_and_no_empty_base_line():
+    spec = expected()
+    spec["base"]["batches"] = []
+    report = run(FakeSynapt(spec), spec)
+    assert report["ok"] and report["base"]["expected"] == 0
+    assert report["expansion"]["state"] == "complete"
+    assert not any("base corpus" in text for _, text in summary_lines(report))
+
+
+def test_build_expected_without_a_base_reads_procedures_from_the_single_corpus(tmp_path):
+    root = tmp_path / "profile"
+    (root / "cards").mkdir(parents=True)
+    (root / "cards" / "profile-0001.txt").write_text("x" * 400, encoding="utf-8")
+    (root / "procedures").mkdir()
+    (root / "procedures" / "sop-a.txt").write_text("# Title" + chr(10) + "source_id: SOP-A-001" + chr(10), encoding="utf-8")
+    entry = {"path": "cards/profile-0001.txt", "sha256": "sha1", "marker": "cardpack_x", "cards": 4,
+             "claim_ids": ["CLM-0000000001"]}
+    (root / "manifest.json").write_text(json.dumps({"batches": [entry]}), encoding="utf-8")
+    result = build_expected(None, root)
+    assert result["base"]["batches"] == [] and result["procedures"] == ["SOP-A-001"]
+    assert result["expansion"]["batches"][0]["name"] == "profile-0001.txt"
+
+
+TICKETS = {"tickets": 2000, "id_field": "ticket_id", "label_fields": ["fraud_flag", "resolution"]}
+TICKET_STATS = {"has_ticket_store": True, "ticket_mining": {**TICKETS, "held_out": 400}}
+
+
+def procedures_and_tickets():
+    """The layout of synapt_capstone1 from 13 October 2026: procedures as documents, claims in the ticket store."""
+    return {"base": {"batches": []}, "expansion": {"batches": []}, "procedures": ["SOP-AUTO-001", "SOP-REVIEW-001"],
+            "tickets": dict(TICKETS)}
+
+
+def sop(name):
+    return {"f": name, "n": 1, "linked": 1, "lo": 0, "hi": 900}
+
+
+def test_a_procedures_and_ticket_store_provider_is_verified_without_batch_lines():
+    spec = procedures_and_tickets()
+    episodes = {"f": "es_provider", "n": 22, "linked": 400, "lo": 0, "hi": 40_000}  # Synapt's own memory may grow large
+    fake = FakeSynapt(spec, stats_extra=TICKET_STATS, extra_docs=[sop("a.txt"), sop("b.txt"), episodes])
+    report = run(fake, spec)
+    assert report["ok"] and report["expansion"]["state"] == "none" and report["leftover_documents"] == []
+    lines = summary_lines(report)
+    assert all(mark in {"ok", ".."} for mark, _ in lines)
+    assert ("ok", "ticket store: 2,000 tickets (400 held out by Synapt), labels fraud_flag, resolution") in lines
+    assert not any("corpus" in text for _, text in lines)
+
+
+def test_a_card_batch_left_behind_fails_the_check():
+    spec = procedures_and_tickets()
+    leftover = {"f": "batch.txt", "n": 501, "linked": 501, "lo": 0, "hi": 220_000}
+    report = run(FakeSynapt(spec, stats_extra=TICKET_STATS, extra_docs=[sop("a.txt"), leftover]), spec)
+    assert not report["ok"] and report["leftover_documents"] == ["batch.txt"]
+    assert ("XX", "leftover document batch.txt: not a procedure, and too large for one") in summary_lines(report)
+
+
+def test_a_missing_or_different_ticket_store_fails_the_check():
+    spec = procedures_and_tickets()
+    report = run(FakeSynapt(spec, extra_docs=[sop("a.txt")]), spec)
+    assert not report["ok"] and report["tickets"]["problems"] == ["the provider has no ticket store"]
+    short = {"has_ticket_store": True, "ticket_mining": {**TICKETS, "tickets": 500, "held_out": 100}}
+    report = run(FakeSynapt(spec, stats_extra=short, extra_docs=[sop("a.txt")]), spec)
+    assert not report["ok"] and report["tickets"]["problems"] == ["500 tickets, expected 2000"]

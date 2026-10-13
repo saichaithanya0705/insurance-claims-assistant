@@ -152,7 +152,7 @@ they require appropriate data and evaluation rather than more generated labels.
 ```powershell
 uv run python scripts/retrain_models.py --rows 600000 --memory-limit 1GB
 uv run pytest tests/test_analytics.py -q
-uv run ruff check src/claims/analytics.py scripts/retrain_models.py tests/test_analytics.py
+uv run ruff check src/claims/ml/analytics.py scripts/retrain_models.py tests/test_analytics.py
 ```
 
 Evidence is in `artifacts/models/retraining_report.json`, with progress logs in

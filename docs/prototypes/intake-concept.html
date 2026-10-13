@@ -1,0 +1,1045 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claim canvas · intake concept</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f3f1ec; --bg-2: #f8f7f3; --surface: #ffffff; --surface-hi: #f8f6f2; --surface-solid: #f1eee7;
+  --track: #e9e5dc; --border: #e3ddd2; --hairline: #ece7de; --border-strong: #8f8679;
+  --text: #1b221f; --text-2: #464e49; --text-3: #676760;
+  --teal: #1d5a4b; --teal-hover: #154536; --teal-dim: #e7f1ec; --teal-border: #a7c8ba; --teal-glow: rgb(29 90 75 / 0.14);
+  --violet: #574f78; --violet-dim: #efedf6; --violet-border: #c6bfdb;
+  --sky: #2f5a76; --sky-dim: #e9f1f7; --sky-border: #b0c8da;
+  --amber: #7a4a0e; --amber-dim: #fdf3df; --amber-border: #dfc896;
+  --rose: #8f3434; --rose-dim: #fbedea; --rose-border: #e0b7af;
+  --radius-sm: 6px; --radius: 10px; --radius-lg: 16px;
+  --shadow-xs: 0 1px 2px rgb(38 34 26 / 0.06);
+  --shadow: 0 1px 2px rgb(38 34 26 / 0.05), 0 6px 20px -8px rgb(38 34 26 / 0.12);
+  --shadow-lg: 0 2px 6px rgb(38 34 26 / 0.06), 0 24px 48px -18px rgb(24 58 48 / 0.24);
+  --ring: 0 0 0 3px var(--teal-glow);
+  --font-sans: 'Geist Variable', 'Geist', 'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-sans); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+code { font-family: var(--font-mono); font-size: 0.92em; background: var(--surface-solid); padding: 1px 5px; border-radius: 4px; }
+
+.concept-bar { background: var(--text); color: #f1eee7; font-size: 12.5px; padding: 8px 16px; text-align: center; }
+.concept-bar strong { color: #fff; margin-right: 6px; letter-spacing: 0.02em; }
+.concept-bar code { background: rgb(255 255 255 / 0.12); color: #fff; }
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 28px 24px 56px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; margin-bottom: 22px; }
+.eyebrow { margin: 0 0 6px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); }
+h1 { margin: 0; font: 500 34px/1.12 var(--font-serif); letter-spacing: -0.01em; }
+.lede { margin: 8px 0 0; max-width: 56ch; color: var(--text-2); font-size: 15px; }
+.head-actions { display: flex; gap: 10px; align-items: center; }
+
+.btn { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); padding: 7px 12px; font-weight: 500; font-size: 13px; box-shadow: var(--shadow-xs); transition: background 0.15s, border-color 0.15s; }
+.btn:hover { background: var(--surface-hover, #f2efe8); border-color: var(--border-strong); }
+.btn.ghost { background: transparent; box-shadow: none; border-color: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--surface-solid); }
+.seg { display: inline-flex; background: var(--track); border-radius: 8px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--text-2); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-xs); }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+body.fields-only .grid { grid-template-columns: minmax(0, 720px); justify-content: center; }
+body.fields-only .notes { display: none; }
+.pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.notes { position: sticky; top: 16px; }
+.pane-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px 0; }
+h2 { margin: 0; font-size: 15px; font-weight: 600; }
+h3 { margin: 0; font-size: 11.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+.hint { font-size: 12px; color: var(--text-3); }
+
+/* ---------- the notes surface ---------- */
+.editor { position: relative; margin: 12px 18px 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); transition: border-color 0.15s, box-shadow 0.15s; }
+.editor:focus-within { border-color: var(--teal-border); box-shadow: var(--ring); background: #fff; }
+.editor.drag { border-color: var(--teal); background: var(--teal-dim); }
+.backdrop, #notes {
+  margin: 0; padding: 14px 16px; font: 15px/1.7 var(--font-sans); letter-spacing: normal; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;
+  height: 300px; width: 100%; border: 0; overflow-y: scroll; scrollbar-width: thin;
+}
+.backdrop::-webkit-scrollbar, #notes::-webkit-scrollbar { width: 10px; }
+.backdrop { position: absolute; inset: 0; color: transparent; pointer-events: none; border-radius: var(--radius); }
+#notes { position: relative; display: block; background: transparent; resize: none; outline: none; caret-color: var(--teal); color: var(--text); }
+#notes::placeholder { color: var(--text-3); }
+.backdrop::-webkit-scrollbar-thumb { background: transparent; }
+mark { color: transparent; border-radius: 3px; transition: background 0.15s, outline-color 0.15s; }
+mark.m-money { background: var(--teal-dim); box-shadow: 0 0 0 1px var(--teal-border); }
+mark.m-date { background: var(--sky-dim); box-shadow: 0 0 0 1px var(--sky-border); }
+mark.m-place { background: var(--violet-dim); box-shadow: 0 0 0 1px var(--violet-border); }
+mark.m-hist { background: var(--amber-dim); box-shadow: 0 0 0 1px var(--amber-border); }
+mark.m-doc-ok { background: var(--surface-solid); text-decoration: underline solid var(--teal) 2px; text-underline-offset: 3px; }
+mark.m-doc-miss { background: var(--rose-dim); text-decoration: underline wavy var(--rose) 1.5px; text-underline-offset: 3px; }
+mark.m-doc-unclear { background: var(--amber-dim); text-decoration: underline dashed var(--amber) 1.5px; text-underline-offset: 3px; }
+mark.hot { outline: 2px solid var(--teal); outline-offset: 1px; }
+.drop-hint { position: absolute; inset: 0; display: none; place-items: center; font-weight: 600; color: var(--teal); background: rgb(231 241 236 / 0.86); border-radius: var(--radius); pointer-events: none; }
+.editor.drag .drop-hint { display: grid; }
+
+.editor-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 20px 0; font-size: 12px; color: var(--text-3); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; border: 1px solid; }
+.lg-money { background: var(--teal-dim); border-color: var(--teal-border) !important; }
+.lg-date { background: var(--sky-dim); border-color: var(--sky-border) !important; }
+.lg-place { background: var(--violet-dim); border-color: var(--violet-border) !important; }
+.lg-hist { background: var(--amber-dim); border-color: var(--amber-border) !important; }
+.lg-doc { background: var(--surface-solid); border-color: var(--border-strong) !important; }
+
+.examples { padding: 16px 18px 18px; }
+.ex-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.ex { text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 9px 11px; transition: border-color 0.15s, transform 0.15s var(--ease), box-shadow 0.15s; }
+.ex:hover { border-color: var(--teal-border); box-shadow: var(--shadow-xs); transform: translateY(-1px); }
+.ex b { display: block; font-size: 13px; font-weight: 600; }
+.ex span { display: block; font-size: 12px; color: var(--text-3); margin-top: 1px; }
+.fine { margin: 10px 0 0; font-size: 12px; color: var(--text-3); }
+
+/* ---------- the claim card ---------- */
+.status { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.status.ready { color: var(--teal); }
+.progress { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 10px 18px 2px; }
+.progress i { height: 4px; border-radius: 4px; background: var(--track); transition: background 0.3s var(--ease); }
+.progress i.on { background: var(--teal); }
+.progress i.chk { background: #d9a441; }
+.group { padding: 14px 18px 2px; }
+.group + .group { border-top: 1px solid var(--hairline); margin-top: 12px; }
+/* subgrid: label row, control row and message row line up across every cell in a line, even when a badge wraps */
+.cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0 12px; margin-top: 8px; }
+.cell { display: grid; grid-template-rows: subgrid; grid-row: span 3; row-gap: 0; margin-bottom: 12px; min-width: 0; }
+.cell.full { grid-column: 1 / -1; }
+.cell-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 2px 8px; min-height: 22px; }
+.cell label, .cell .lbl { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.ctl { margin-top: 3px; position: relative; }
+.ctl input, .ctl select { width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); padding: 8px 10px; min-height: 38px; box-shadow: var(--shadow-xs); transition: border-color 0.15s, box-shadow 0.15s, background 0.4s; }
+.ctl input:focus, .ctl select:focus { outline: none; border-color: var(--teal-border); box-shadow: var(--ring); }
+.ctl input::placeholder { color: #9a9a92; }
+.affix input { padding-left: 22px; }
+.affix::before { content: '$'; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 13px; pointer-events: none; }
+.cell[data-o="text"] .ctl input, .cell[data-o="text"] .ctl select { background: #f6faf8; border-color: var(--teal-border); }
+.cell[data-o="check"] .ctl input, .cell[data-o="check"] .ctl select { background: #fffaf0; border-color: var(--amber-border); }
+.cell[data-o="need"] .ctl input, .cell[data-o="need"] .ctl select { border-style: dashed; border-color: var(--rose-border); }
+.cell.flash .ctl input, .cell.flash .ctl select { animation: flash 0.9s var(--ease); }
+@keyframes flash { 0% { box-shadow: 0 0 0 4px rgb(29 90 75 / 0.28); } 100% { box-shadow: var(--shadow-xs); } }
+.cell.nudge { animation: nudge 0.35s; }
+@keyframes nudge { 20% { transform: translateX(-4px); } 60% { transform: translateX(4px); } }
+
+.badge { border: 1px solid transparent; border-radius: 999px; font-size: 11px; font-weight: 600; padding: 1px 8px; line-height: 18px; white-space: nowrap; background: transparent; }
+button.badge:hover { filter: brightness(0.96); }
+.badge.text { background: var(--teal-dim); color: var(--teal); border-color: var(--teal-border); }
+.badge.check { background: var(--amber-dim); color: var(--amber); border-color: var(--amber-border); }
+.badge.you { background: var(--surface-solid); color: var(--text-2); border-color: var(--border); }
+.badge.need { background: var(--rose-dim); color: var(--rose); border-color: var(--rose-border); }
+.badge.idle { color: var(--text-3); }
+.sub { min-height: 0; font-size: 12px; color: var(--text-3); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.sub:empty { display: none; }
+.sub .why { color: var(--amber); }
+.sub .err { color: var(--rose); font-weight: 500; }
+.sub .warn { color: var(--amber); }
+.pick, .linkbtn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--text-2); }
+.pick:hover { border-color: var(--teal-border); background: var(--teal-dim); color: var(--teal); }
+.linkbtn { border-color: var(--amber-border); background: var(--amber-dim); color: var(--amber); font-weight: 600; }
+.linkbtn:hover { filter: brightness(0.96); }
+
+.types { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.types button { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--text-2); }
+.types button[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: #fff; }
+.types button:not([aria-pressed="true"]):hover { border-color: var(--teal-border); }
+
+.docs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.doc { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 5px 6px 5px 10px; font-size: 13px; box-shadow: var(--shadow-xs); }
+.doc[data-s="available"] { border-color: var(--teal-border); background: #f6faf8; }
+.doc[data-s="missing"] { border-color: var(--rose-border); background: #fdf6f4; }
+.doc[data-s="unclear"] { border-color: var(--amber-border); background: #fffaf0; border-style: dashed; }
+.doc .nm { font-weight: 600; cursor: default; }
+.doc .two { display: inline-flex; background: var(--track); border-radius: 6px; padding: 2px; gap: 2px; }
+.doc .two button { border: 0; background: transparent; border-radius: 4px; padding: 1px 7px; font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+.doc .two button[aria-pressed="true"].ok { background: var(--teal); color: #fff; }
+.doc .two button[aria-pressed="true"].no { background: var(--rose); color: #fff; }
+.doc .two button:not([aria-pressed="true"]):hover { color: var(--text); }
+.doc .rm { border: 0; background: transparent; color: var(--text-3); padding: 0 4px; font-size: 16px; line-height: 1; border-radius: 4px; }
+.doc .rm:hover { color: var(--rose); background: var(--rose-dim); }
+.adddocs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.adddocs .pick { border-style: dashed; }
+.docnote { margin: 8px 0 0; font-size: 12px; color: var(--text-3); }
+
+.signals { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-top: 8px; }
+.signal { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; background: var(--surface-hi); }
+.signal small { display: block; font-size: 11.5px; color: var(--text-3); }
+.signal strong { display: block; font-size: 18px; font-family: var(--font-serif); font-weight: 500; }
+.signal.warn { background: var(--amber-dim); border-color: var(--amber-border); }
+.signal.warn strong { color: var(--amber); }
+
+.compare { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.compare .chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 11px; font-size: 13px; color: var(--text-2); }
+.compare .chip[aria-pressed="true"] { background: var(--sky-dim); border-color: var(--sky-border); color: var(--sky); font-weight: 600; }
+.compare .chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.compare-line { margin: 8px 0 0; font-size: 12.5px; color: var(--text-2); }
+
+.cta { padding: 16px 18px 18px; border-top: 1px solid var(--hairline); margin-top: 14px; display: grid; gap: 8px; }
+.go { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; border: 0; border-radius: var(--radius); padding: 13px 16px; font-size: 15px; font-weight: 600; color: #fff; background: linear-gradient(90deg, #1d5a4b, #2f7a66); box-shadow: 0 6px 16px -6px rgb(29 90 75 / 0.55); transition: transform 0.15s var(--ease), box-shadow 0.15s, filter 0.15s; }
+.go:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.go.wait { background: var(--track); color: var(--text-2); box-shadow: none; }
+.go kbd { font: 11px var(--font-mono); background: rgb(255 255 255 / 0.18); border-radius: 4px; padding: 1px 5px; }
+.go.wait kbd { background: rgb(0 0 0 / 0.07); }
+.cta-note { font-size: 12.5px; color: var(--amber); text-align: center; min-height: 18px; }
+.form-foot { margin: 0; font-size: 12px; color: var(--text-3); text-align: center; }
+
+dialog { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0; width: min(720px, calc(100vw - 32px)); box-shadow: var(--shadow-lg); background: var(--surface); }
+dialog::backdrop { background: rgb(27 34 31 / 0.45); }
+.dlg-body { padding: 20px 22px; }
+.dlg-body h2 { font: 500 22px/1.2 var(--font-serif); margin-bottom: 6px; }
+.dlg-body p { margin: 0 0 12px; color: var(--text-2); }
+pre { margin: 0; max-height: 46vh; overflow: auto; background: #1b221f; color: #e8ece9; border-radius: var(--radius); padding: 14px 16px; font: 12.5px/1.55 var(--font-mono); }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 20px); opacity: 0; background: var(--text); color: #fff; padding: 9px 14px; border-radius: 999px; font-size: 13px; pointer-events: none; transition: opacity 0.2s, transform 0.3s var(--ease); z-index: 50; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 980px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .notes { position: static; }
+  h1 { font-size: 28px; }
+}
+@media (max-width: 520px) {
+  .wrap { padding: 20px 16px 40px; }
+  .ex-grid { grid-template-columns: 1fr; }
+  .cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="concept-bar"><strong>Concept prototype</strong> Runs entirely in this page: no backend, no model. It produces the same <code>ClaimInput</code> the app already posts to <code>/api/investigations</code>.</div>
+
+<div class="wrap">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">New investigation</p>
+      <h1>Start with what came in.</h1>
+      <p class="lede">Paste the email, call note or adjuster summary. The claim card fills itself in; you only deal with what’s flagged.</p>
+    </div>
+    <div class="head-actions">
+      <div class="seg" role="group" aria-label="Layout">
+        <button type="button" id="viewSplit" aria-pressed="true">Notes + card</button>
+        <button type="button" id="viewFields" aria-pressed="false">Fields only</button>
+      </div>
+      <button type="button" class="btn ghost" id="clearBtn">Clear</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="pane notes" aria-labelledby="notesH">
+      <div class="pane-head">
+        <h2 id="notesH">The notes</h2>
+        <span class="hint">Paste, type, or drop a .txt / .eml</span>
+      </div>
+      <div class="editor" id="editor">
+        <div class="backdrop" id="backdrop" aria-hidden="true"></div>
+        <textarea id="notes" spellcheck="true" maxlength="6000" aria-label="Incident notes" placeholder="Paste the FNOL email, adjuster notes or call summary…"></textarea>
+        <div class="drop-hint">Drop to load</div>
+      </div>
+      <div class="editor-foot">
+        <span id="count">0 / 6000</span>
+        <span class="legend" aria-label="Highlight key">
+          <span><i class="lg-money"></i>Amounts</span>
+          <span><i class="lg-date"></i>Dates</span>
+          <span><i class="lg-place"></i>Place &amp; type</span>
+          <span><i class="lg-hist"></i>History</span>
+          <span><i class="lg-doc"></i>Documents</span>
+        </span>
+      </div>
+      <div class="examples">
+        <h3>No notes handy? Try one</h3>
+        <div class="ex-grid" id="examples"></div>
+        <p class="fine">Dropped PDFs and images are added to Documents by name only; their content isn’t read.</p>
+      </div>
+    </section>
+
+    <section class="pane card" aria-labelledby="cardH">
+      <div class="pane-head">
+        <h2 id="cardH">Claim card</h2>
+        <span class="status" id="status" aria-live="polite"></span>
+      </div>
+      <div class="progress" id="progress" aria-hidden="true"></div>
+
+      <div class="group">
+        <h3>The loss</h3>
+        <div class="cells">
+          <div class="cell full" data-k="claim_type" id="cell-claim_type">
+            <div class="cell-top"><span class="lbl" id="lbl-type">Claim type</span><span class="badge idle" data-badge></span></div>
+            <div class="types" role="group" aria-labelledby="lbl-type" id="types"></div>
+            <div class="sub" data-sub></div>
+          </div>
+          <div class="cell" data-k="incident_date" id="cell-incident_date">
+            <div class="cell-top"><label for="f-incident_date">Incident date</label><span data-badgewrap></span></div>
+            <div class="ctl"><input id="f-incident_date" type="date"></div>
+            <div class="sub" data-sub></div>
+          </div>
+          <div class="cell" data-k="claim_filed_date" id="cell-claim_filed_date">
+            <div class="cell-top"><label for="f-claim_filed_date">Filing date</label><span data-badgewrap></span></div>
+            <div class="ctl"><input id="f-claim_filed_date" type="date"></div>
+            <div class="sub" data-sub></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>The money</h3>
+        <div class="cells">
+          <div class="cell" data-k="claim_amount" id="cell-claim_amount">
+            <div class="cell-top"><label for="f-claim_amount">Claim amount</label><span data-badgewrap></span></div>
+            <div class="ctl affix"><input id="f-claim_amount" inputmode="decimal" autocomplete="off" placeholder="0"></div>
+            <div class="sub" data-sub></div>
+          </div>
+          <div class="cell" data-k="deductible" id="cell-deductible">
+            <div class="cell-top"><label for="f-deductible">Deductible</label><span data-badgewrap></span></div>
+            <div class="ctl affix"><input id="f-deductible" inputmode="decimal" autocomplete="off" placeholder="0"></div>
+            <div class="sub" data-sub></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>The policy</h3>
+        <div class="cells">
+          <div class="cell" data-k="state" id="cell-state">
+            <div class="cell-top"><label for="f-state">State</label><span data-badgewrap></span></div>
+            <div class="ctl"><select id="f-state"></select></div>
+            <div class="sub" data-sub></div>
+          </div>
+          <div class="cell" data-k="previous_claims_count" id="cell-previous_claims_count">
+            <div class="cell-top"><label for="f-previous_claims_count">Prior claims</label><span data-badgewrap></span></div>
+            <div class="ctl"><input id="f-previous_claims_count" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+            <div class="sub" data-sub></div>
+          </div>
+          <div class="cell" data-k="policyholder_tenure_years" id="cell-policyholder_tenure_years">
+            <div class="cell-top"><label for="f-policyholder_tenure_years">Tenure · years</label><span data-badgewrap></span></div>
+            <div class="ctl"><input id="f-policyholder_tenure_years" inputmode="decimal" autocomplete="off" placeholder="0"></div>
+            <div class="sub" data-sub></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Documents reported available</h3>
+        <div class="docs" id="docs"></div>
+        <div class="adddocs" id="adddocs"></div>
+        <p class="docnote" id="docnote"></p>
+      </div>
+
+      <div class="group">
+        <h3>Worth knowing before you build</h3>
+        <div class="signals" id="signals"></div>
+      </div>
+
+      <div class="group">
+        <h3>Compare against</h3>
+        <div class="compare" id="compare"></div>
+        <p class="compare-line" id="compareLine"></p>
+      </div>
+
+      <div class="cta">
+        <button type="button" class="go wait" id="go"></button>
+        <div class="cta-note" id="ctaNote" aria-live="polite"></div>
+        <p class="form-foot">Recommendations require handler review. Nothing here approves, denies or pays a claim.</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlgH">
+  <div class="dlg-body">
+    <h2 id="dlgH">This is what would be sent</h2>
+    <p>Exactly the shape <code>POST /api/investigations</code> takes today. The <code>_intake</code> block is the proposed, optional provenance record for the audit trail.</p>
+    <pre id="payload" tabindex="0"></pre>
+    <div class="dlg-actions">
+      <button type="button" class="btn" id="copyBtn">Copy JSON</button>
+      <button type="button" class="btn" id="closeBtn">Close</button>
+    </div>
+  </div>
+</dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* PARSER:START */
+const STATES = [["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],["DC","District of Columbia"],["FL","Florida"],["GA","Georgia"],["HI","Hawaii"],["ID","Idaho"],["IL","Illinois"],["IN","Indiana"],["IA","Iowa"],["KS","Kansas"],["KY","Kentucky"],["LA","Louisiana"],["ME","Maine"],["MD","Maryland"],["MA","Massachusetts"],["MI","Michigan"],["MN","Minnesota"],["MS","Mississippi"],["MO","Missouri"],["MT","Montana"],["NE","Nebraska"],["NV","Nevada"],["NH","New Hampshire"],["NJ","New Jersey"],["NM","New Mexico"],["NY","New York"],["NC","North Carolina"],["ND","North Dakota"],["OH","Ohio"],["OK","Oklahoma"],["OR","Oregon"],["PA","Pennsylvania"],["RI","Rhode Island"],["SC","South Carolina"],["SD","South Dakota"],["TN","Tennessee"],["TX","Texas"],["UT","Utah"],["VT","Vermont"],["VA","Virginia"],["WA","Washington"],["WV","West Virginia"],["WI","Wisconsin"],["WY","Wyoming"]];
+const STATE_CODES = new Set(STATES.map(s => s[0]));
+const AMBIG_CODES = new Set(["OR","IN","ME","OK","HI","OH","ID","AL","LA","MA","PA","DE","CO","MD","MS"]);
+const MON_IDX = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+const MON_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const NUMW = { zero: 0, none: 0, no: 0, a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, half: 0.5, 'half a': 0.5 };
+const MON_RX = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const WN = '(\\d+|zero|none|no|one|two|three|four|five|six|seven|eight|nine|ten)';
+const DOC_VOCAB = [
+  ['incident statement', /\b(?:(?:written|signed|recorded|incident|insured'?s?|witness|customer'?s?|own)\s+)?statements?\b/i],
+  ['police report', /\bpolice(?:\s+department)?(?:\s+case)?\s+reports?\b|\bincident\s+reports?\b|\bFIR\b/i],
+  ['repair estimate', /\b(?:repair|body[\s-]?shop|mechanic'?s?|contractor'?s?)\s+(?:estimates?|quotes?|quotations?|bids?)\b/i],
+  ['photos', /\b(?:photos?|photographs?|pictures?)\b/i],
+  ['invoice', /\b(?:invoices?|receipts?|bill\s+of\s+sale)\b/i],
+  ['medical report', /\b(?:medical|doctor'?s?|hospital|physician)\s+(?:reports?|records?|notes?|bills?)\b/i],
+  ['inspection report', /\b(?:inspection|adjuster'?s?|survey|assessment)\s+reports?\b/i],
+];
+const TYPE_WORDS = {
+  auto: ['car','cars','vehicle','vehicles','truck','suv','sedan','motorcycle','bumper','windshield','collision','rear-ended','driver','tow','towed','parked','parking','junction','intersection','crash','auto','dashcam'],
+  home: ['home','house','roof','pipe','pipes','basement','kitchen','hallway','bathroom','ceiling','homeowner','flood','flooded','burst','water damage','hail','chimney','mold','garage'],
+  renters: ['renter','renters','tenant','landlord','lease','belongings','apartment unit','my unit'],
+  property: ['property','building','structure','fence','rental property'],
+  business: ['business','shop','store','inventory','customers','premises','restaurant','office','commercial','warehouse','equipment','employees'],
+};
+
+function mkISO(y, m, d) {
+  const dt = new Date(Date.UTC(y, m, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m || dt.getUTCDate() !== d) return null;
+  return dt.toISOString().slice(0, 10);
+}
+function addDays(iso, n) {
+  const dt = new Date(iso + 'T00:00:00Z');
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+function isBoundary(t, i) {
+  const c = t[i];
+  return c === ';' || c === '!' || c === '?' || c === '\n' || (c === '.' && (i + 1 >= t.length || /\s/.test(t[i + 1])));
+}
+function clauseStart(t, i) { let s = i; while (s > 0 && !isBoundary(t, s - 1)) s--; return s; }
+function clauseEnd(t, i) { let e = i; while (e < t.length && !isBoundary(t, e)) e++; return e; }
+function lastMatchEnd(re, str) {
+  const g = new RegExp(re.source, 'gi'); let m, last = -1;
+  while ((m = g.exec(str))) last = m.index + m[0].length;
+  return last;
+}
+function numOf(tok) {
+  if (tok == null) return null;
+  const t = String(tok).toLowerCase().trim();
+  if (/^\d+(\.\d+)?$/.test(t)) return parseFloat(t);
+  return Object.prototype.hasOwnProperty.call(NUMW, t) ? NUMW[t] : null;
+}
+
+const FILED_RX = /\b(fil(?:ed|ing)|reported|called\s+in|called|phoned|notified|notification|FNOL|first\s+notice|intake|submitted|lodged|came\s+in|contacted\s+us|emailed\s+us|date\s+reported)\b/;
+const INC_RX = /\b(occurred|happened|loss|incident|accident|crash(?:ed)?|collision|collided|stolen|theft|burglary|burgled|robbery|robbed|break[\s-]?in|broke\s+into|vandali[sz]ed|vandalism|rear-ended|burst|leak(?:ed)?|fire|flood(?:ed)?|storm|hail|lightning|damage[d]?|discovered|noticed|struck|hit|broke|overnight|sometime|DOL)\b/;
+
+function scanDates(text, today) {
+  const ty = +today.slice(0, 4);
+  const todayDow = new Date(today + 'T00:00:00Z').getUTCDay();
+  const found = [];
+  const add = (m, iso, conf, reason, extra) => {
+    if (!iso) return;
+    found.push(Object.assign({ start: m.index, end: m.index + m[0].length, iso, conf, reason }, extra || {}));
+  };
+  const yearless = (mo, d) => {
+    let y = ty, iso = mkISO(y, mo, d);
+    if (iso && iso > today) { y--; iso = mkISO(y, mo, d); }
+    return { iso, y };
+  };
+  let m, rx;
+
+  rx = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
+  while ((m = rx.exec(text))) add(m, mkISO(+m[1], +m[2] - 1, +m[3]), 'high');
+
+  rx = /\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{4}|\d{2})\b/g;
+  while ((m = rx.exec(text))) {
+    let a = +m[1], b = +m[2], y = +m[3]; if (y < 100) y += 2000;
+    let mo = a, d = b, conf = 'high', reason = '';
+    if (a > 12) { mo = b; d = a; }
+    else if (b <= 12 && a !== b) { conf = 'check'; reason = `Read as month/day (${MON_NAMES[a - 1]} ${b}). If the note uses day/month it would be ${a} ${MON_NAMES[b - 1]}.`; }
+    add(m, mkISO(y, mo - 1, d), conf, reason);
+  }
+
+  rx = new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?' + MON_RX + '\\b\\.?(?:,?\\s+(\\d{4})\\b)?', 'gi');
+  while ((m = rx.exec(text))) {
+    const mo = MON_IDX[m[2].slice(0, 3).toLowerCase()], d = +m[1];
+    if (m[3]) add(m, mkISO(+m[3], mo, d), 'high');
+    else { const r = yearless(mo, d); add(m, r.iso, 'check', `No year in the note, so ${r.y} was assumed.`); }
+  }
+
+  rx = new RegExp('\\b' + MON_RX + '\\b\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s+(\\d{4})\\b)?', 'gi');
+  while ((m = rx.exec(text))) {
+    const mo = MON_IDX[m[1].slice(0, 3).toLowerCase()], d = +m[2];
+    if (m[3]) add(m, mkISO(+m[3], mo, d), 'high');
+    else { const r = yearless(mo, d); add(m, r.iso, 'check', `No year in the note, so ${r.y} was assumed.`); }
+  }
+
+  rx = /\b(yesterday|last\s+night|today|tonight|(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+days?\s+ago|last\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday))\b/gi;
+  while ((m = rx.exec(text))) {
+    const w = m[1].toLowerCase().replace(/\s+/g, ' ');
+    let iso = null;
+    if (w === 'yesterday' || w === 'last night') iso = addDays(today, -1);
+    else if (w === 'today' || w === 'tonight') iso = today;
+    else if (m[2]) iso = addDays(today, -numOf(m[2]));
+    else if (m[3]) {
+      const dow = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'].indexOf(m[3].toLowerCase());
+      iso = addDays(today, -(((todayDow - dow + 7) % 7) || 7));
+    }
+    add(m, iso, 'check', `Worked out “${m[0]}” from today’s date (${today}).`, { relative: true });
+  }
+
+  found.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  const kept = []; let edge = -1;
+  for (const f of found) { if (f.start >= edge) { kept.push(f); edge = f.end; } }
+  return kept;
+}
+
+function pickDates(text, today) {
+  const mentions = scanDates(text, today);
+  for (const d of mentions) {
+    const before = text.slice(Math.max(clauseStart(text, d.start), d.start - 70), d.start).toLowerCase();
+    const f = lastMatchEnd(FILED_RX, before), i = lastMatchEnd(INC_RX, before);
+    d.role = f < 0 && i < 0 ? null : (f > i ? 'filed' : 'incident');
+  }
+  let inc = mentions.find(d => d.role === 'incident');
+  let fil = mentions.find(d => d.role === 'filed');
+  const unk = mentions.filter(d => !d.role);
+  if (!inc && unk.length) { inc = unk.shift(); inc.assumed = 'Nothing next to this date says what it is, so the earliest date was taken as the incident.'; }
+  if (!fil && unk.length) {
+    const later = unk.filter(d => !inc || d.iso >= inc.iso).pop();
+    if (later) { fil = later; fil.assumed = 'Nothing next to this date says what it is, so the later date was taken as the filing date.'; }
+  }
+  const out = {};
+  const pack = (d) => ({ value: d.iso, conf: (d.conf === 'check' || d.assumed) ? 'check' : 'high', reason: [d.reason, d.assumed].filter(Boolean).join(' '), spans: [[d.start, d.end]] });
+  if (inc) out.incident_date = pack(inc);
+  if (fil) out.claim_filed_date = pack(fil);
+  if (inc && !fil) {
+    const nx = /\b(?:the\s+next\s+day|the\s+following\s+day|the\s+day\s+after|next\s+day)\b/i.exec(text);
+    if (nx) out.claim_filed_date = { value: addDays(inc.iso, 1), conf: 'check', reason: `“${nx[0]}” counted from the incident date.`, spans: [[nx.index, nx.index + nx[0].length]] };
+  }
+  return out;
+}
+
+const DED_RX = /\b(deductible|excess|out[\s-]of[\s-]pocket)\b/;
+const CLM_RX = /\b(claim(?:ed|ing|s)?|estimate|quote|quotation|total|loss|damages?|repair|worth|valued?|cost|costs|invoice|replacement|payout|demand|bid)\b/;
+function pickMoney(text) {
+  const rx = /(?:US\$|USD\s?|\$)\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s?(k|thousand|million|mil|m)?\b|((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s?(k)?\s?(?:dollars|USD|bucks)\b/gi;
+  const items = []; let m;
+  while ((m = rx.exec(text))) {
+    const raw = (m[1] || m[3]).replace(/,/g, ''); const suf = (m[2] || m[4] || '').toLowerCase();
+    let v = parseFloat(raw);
+    if (suf === 'k' || suf === 'thousand') v *= 1000; else if (suf) v *= 1e6;
+    const start = m.index, end = m.index + m[0].trimEnd().length;
+    const cs = clauseStart(text, start), ce = clauseEnd(text, end);
+    const before = text.slice(Math.max(cs, start - 60), start).toLowerCase();
+    const after = text.slice(end, Math.min(ce, end + 25)).toLowerCase();
+    const d1 = lastMatchEnd(DED_RX, before), c1 = lastMatchEnd(CLM_RX, before);
+    let role = null;
+    if (d1 >= 0 || c1 >= 0) role = d1 >= c1 ? 'ded' : 'clm';
+    else if (DED_RX.test(after)) role = 'ded';
+    else if (CLM_RX.test(after)) role = 'clm';
+    const near = text.slice(Math.max(0, start - 25), start) + ' ' + text.slice(end, end + 10);
+    const hedge = /\b(around|about|approx(?:imately)?|roughly|nearly|almost|circa|maybe|up to|est\.)\b|~/i.exec(near);
+    items.push({ v, start, end, role, hedge: hedge ? hedge[1] || '~' : null });
+  }
+  const out = {};
+  const fmt = (n) => '$' + n.toLocaleString('en-US');
+  const choose = (list, label, fallbackNote) => {
+    if (!list.length) return null;
+    const distinct = [...new Set(list.map(i => i.v))];
+    const pick = list.slice().sort((a, b) => b.v - a.v)[0];
+    const notes = [];
+    if (fallbackNote) notes.push(fallbackNote);
+    if (distinct.length > 1) notes.push(`Found ${distinct.map(fmt).join(' and ')}; took ${fmt(pick.v)}. Check which is current.`);
+    if (pick.hedge) notes.push(`Looks approximate (“${pick.hedge}”).`);
+    return { value: pick.v, conf: notes.length ? 'check' : 'high', reason: notes.join(' '), spans: list.map(i => [i.start, i.end]) };
+  };
+  const ded = choose(items.filter(i => i.role === 'ded'));
+  if (ded) out.deductible = ded;
+  let clm = choose(items.filter(i => i.role === 'clm'));
+  if (!clm) clm = choose(items.filter(i => !i.role), null, 'No label next to this amount; took the largest figure that isn’t a deductible.');
+  if (clm) out.claim_amount = clm;
+  return out;
+}
+
+function pickState(text) {
+  const hits = [];
+  const names = STATES.slice().sort((a, b) => b[1].length - a[1].length);
+  for (const [code, name] of names) {
+    const re = new RegExp('\\b' + name.replace(/ /g, '\\s+') + '\\b', 'gi'); let m;
+    while ((m = re.exec(text))) hits.push({ code, start: m.index, end: m.index + m[0].length });
+  }
+  let m;
+  const comma = /,\s*([A-Z]{2})\b/g;
+  while ((m = comma.exec(text))) if (STATE_CODES.has(m[1])) hits.push({ code: m[1], start: m.index + m[0].length - 2, end: m.index + m[0].length });
+  const loose = /(?:\bin\s+|\bstate\s*[:\-]?\s*|\b[A-Z][a-z]{2,}\s+)([A-Z]{2})\b/g;
+  while ((m = loose.exec(text))) if (STATE_CODES.has(m[1]) && !AMBIG_CODES.has(m[1])) hits.push({ code: m[1], start: m.index + m[0].length - 2, end: m.index + m[0].length });
+  hits.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  const kept = []; let edge = -1;
+  for (const h of hits) { if (h.start >= edge) { kept.push(h); edge = h.end; } }
+  if (!kept.length) return {};
+  const first = kept[0];
+  const others = [...new Set(kept.map(h => h.code))].filter(c => c !== first.code);
+  const nameOf = (c) => STATES.find(s => s[0] === c)[1];
+  return { state: {
+    value: first.code, conf: others.length ? 'check' : 'high',
+    reason: others.length ? `The note also mentions ${others.map(nameOf).join(', ')}. Used the first state found.` : '',
+    spans: kept.filter(h => h.code === first.code).map(h => [h.start, h.end]),
+  } };
+}
+
+function pickType(text) {
+  const low = text.toLowerCase();
+  const score = {}; const spans = {};
+  for (const [type, words] of Object.entries(TYPE_WORDS)) {
+    score[type] = 0; spans[type] = [];
+    for (const w of words) {
+      const re = new RegExp('(?<![\\w-])' + w.replace(/[-\s]/g, '[-\\s]') + '(?![\\w-])', 'g'); let m;
+      while ((m = re.exec(low))) { score[type]++; spans[type].push([m.index, m.index + m[0].length]); }
+    }
+  }
+  const ranked = Object.entries(score).sort((a, b) => b[1] - a[1]);
+  const [top, topN] = ranked[0], secondN = ranked[1][1];
+  if (topN === 0) return {};
+  const strong = topN >= 2 && topN >= secondN * 2;
+  if (!strong && topN <= secondN) return {};
+  return { claim_type: { value: top, conf: strong ? 'high' : 'check', reason: strong ? '' : `Only weak hints (${topN}) that this is ${top}. Left for you to confirm.`, spans: spans[top].slice(0, 6) } };
+}
+
+function pickPrior(text) {
+  let m;
+  let re = new RegExp('\\b' + WN + '\\s+(?:previous|prior|earlier|past|other|former)\\s+claims?\\b', 'i');
+  if ((m = re.exec(text))) return { previous_claims_count: { value: numOf(m[1]), conf: 'high', reason: '', spans: [[m.index, m.index + m[0].length]] } };
+  re = new RegExp('\\b(?:claims?\\s+history|(?:previous|prior)\\s+claims?|claims\\s+on\\s+file)\\s*[:=\\-]?\\s*' + WN + '\\b', 'i');
+  if ((m = re.exec(text))) return { previous_claims_count: { value: numOf(m[1]), conf: 'high', reason: '', spans: [[m.index, m.index + m[0].length]] } };
+  if ((m = /\bclaim[\s-]free\b|\bfirst(?:[\s-]ever)?\s+claim\b/i.exec(text))) return { previous_claims_count: { value: 0, conf: 'high', reason: '', spans: [[m.index, m.index + m[0].length]] } };
+  if ((m = /\b(second|third|fourth|fifth|2nd|3rd|4th|5th)\s+claim\b/i.exec(text))) {
+    const n = { second: 2, '2nd': 2, third: 3, '3rd': 3, fourth: 4, '4th': 4, fifth: 5, '5th': 5 }[m[1].toLowerCase()];
+    return { previous_claims_count: { value: n - 1, conf: 'check', reason: `Counted “${m[0]}” as ${n - 1} before this one.`, spans: [[m.index, m.index + m[0].length]] } };
+  }
+  return {};
+}
+
+function pickTenure(text, today) {
+  const ty = +today.slice(0, 4);
+  const cue = /\b(customer|policyholder|client|member|(?:renter|tenant)\s+for|with\s+us|tenure|on\s+the\s+books|insured\s+for|policy\s+(?:started|began|since|inception|effective|is|has\s+been)|been\s+insured)\b/i;
+  const re = /\b(\d+(?:\.\d+)?|half\s+a|half|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(years?|yrs?|months?|mos?)\b(?!\s*old)/gi;
+  let m;
+  while ((m = re.exec(text))) {
+    const s = m.index, e = s + m[0].length;
+    const win = text.slice(Math.max(clauseStart(text, s), s - 45), Math.min(clauseEnd(text, e), e + 45));
+    if (!cue.test(win)) continue;
+    const n = numOf(m[1].replace(/\s+/g, ' '));
+    if (n == null) continue;
+    const years = /^m/i.test(m[2]) ? Math.round((n / 12) * 100) / 100 : n;
+    const hedge = /\b(about|around|roughly|nearly|almost|approx(?:imately)?)\b/i.exec(text.slice(Math.max(0, s - 14), s));
+    return { policyholder_tenure_years: { value: years, conf: hedge ? 'check' : 'high', reason: hedge ? `Looks approximate (“${hedge[1]}”).` : '', spans: [[s, e]] } };
+  }
+  const since = /\b(?:customer|insured|policyholder|client|member|policy|with\s+us)\s+since\s+(?:[A-Za-z]+\s+)?(\d{4})\b/i.exec(text);
+  if (since && ty - +since[1] >= 0) return { policyholder_tenure_years: { value: ty - +since[1], conf: 'check', reason: `Worked out from “${since[0]}” and today’s date.`, spans: [[since.index, since.index + since[0].length]] } };
+  return {};
+}
+
+const NEG_BEFORE = /\b(?:no|not|without|lacks?|lacking|missing|awaiting|waiting\s+(?:for|on)|haven'?t|hasn'?t|hadn'?t|didn'?t|never|yet\s+to|unable\s+to|can'?t|cannot|couldn'?t)\b(?:\W+\w+){0,4}\W*$/i;
+const NEG_AFTER = /^(?:\W+\w+){0,3}?\W+(?:not\s+(?:yet\s+)?(?:been\s+)?(?:provided|supplied|received|available|submitted|sent|filed|attached|included|obtained)|(?:still\s+)?(?:to\s+follow|to\s+come|outstanding|pending|missing|awaited|unavailable)|yet|not\s+yet|isn'?t|aren'?t|wasn'?t|weren'?t)\b/i;
+const POS = /\b(attached|enclosed|provided|supplied|submitted|sent|received|have|has|had|on\s+file|obtained|uploaded|available|got|included|forwarded|emailed|given|gave|came\s+in|came\s+back|filed|shared|handed|produced)\b/i;
+const CONTRAST = /\b(?:but|however|although|though|while|whereas)\b/i;
+function pickDocs(text) {
+  const docs = [];
+  for (const [name, rx] of DOC_VOCAB) {
+    const re = new RegExp(rx.source, 'gi'); let m; const ms = [];
+    while ((m = re.exec(text))) {
+      const s = m.index, e = s + m[0].length;
+      let before = text.slice(clauseStart(text, s), s), after = text.slice(e, clauseEnd(text, e));
+      const cg = new RegExp(CONTRAST.source, 'gi'); let cm, cut = -1;
+      while ((cm = cg.exec(before))) cut = cm.index + cm[0].length;
+      if (cut >= 0) before = before.slice(cut);
+      const ca = after.search(CONTRAST); if (ca >= 0) after = after.slice(0, ca);
+      const neg = NEG_BEFORE.test(before.slice(-45)) || NEG_AFTER.test(after.slice(0, 40));
+      const pos = POS.test(before + m[0] + after);
+      ms.push({ status: neg ? 'missing' : pos ? 'available' : 'unclear', s, e });
+    }
+    if (!ms.length) continue;
+    const av = ms.some(x => x.status === 'available'), mi = ms.some(x => x.status === 'missing');
+    let status, reason = '';
+    if (av && mi) { status = 'unclear'; reason = 'The note says this was both supplied and missing.'; }
+    else if (av) status = 'available';
+    else if (mi) status = 'missing';
+    else { status = 'unclear'; reason = 'Mentioned, but the note doesn’t say whether it was supplied.'; }
+    docs.push({ name, status, reason, spans: ms.map(x => [x.s, x.e]) });
+  }
+  return docs;
+}
+
+function parseNotes(text, today) {
+  const fields = Object.assign({}, pickType(text), pickState(text), pickDates(text, today), pickMoney(text), pickPrior(text), pickTenure(text, today));
+  return { fields, docs: pickDocs(text) };
+}
+/* PARSER:END */
+
+/* ===================== UI ===================== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const pad = (n) => String(n).padStart(2, '0');
+const TODAY = (() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; })();
+const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+const daysBetween = (a, b) => (a && b) ? Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 864e5) : null;
+
+const KEYS = ['claim_type', 'incident_date', 'claim_filed_date', 'claim_amount', 'deductible', 'state', 'previous_claims_count', 'policyholder_tenure_years'];
+const REQUIRED = KEYS.filter(k => k !== 'claim_type');
+const LABEL = { incident_date: 'Incident date', claim_filed_date: 'Filing date', claim_amount: 'Claim amount', deductible: 'Deductible', state: 'State', previous_claims_count: 'Prior claims', policyholder_tenure_years: 'Tenure' };
+const MARK_CLS = { claim_amount: 'm-money', deductible: 'm-money', incident_date: 'm-date', claim_filed_date: 'm-date', state: 'm-place', claim_type: 'm-place', previous_claims_count: 'm-hist', policyholder_tenure_years: 'm-hist' };
+const TYPE_OPTS = [['', 'Auto-detect'], ['auto', 'Auto'], ['home', 'Home'], ['renters', 'Renters'], ['property', 'Property'], ['business', 'Business']];
+const DOC_SUGGEST = ['incident statement', 'police report', 'repair estimate', 'photos', 'invoice', 'medical report', 'inspection report'];
+
+const SAMPLES = [
+  { title: 'Rear-end collision', blurb: 'A clean note: most fields read straight off', text:
+`FNOL – phone intake, Wed 2 Sep 2026
+
+Insured called in to report that her car was rear-ended at a junction in Austin, Texas on 1 September 2026. No injuries. She's been with us for 4 years and has had no prior claims.
+
+Body shop estimate came in at $8,500 for the rear bumper, trunk and sensor repair. Deductible on the policy is $500. She sent over a written statement and the repair estimate; photos still to follow.` },
+  { title: 'Vehicle theft, late report', blurb: 'Late filing, no police report, 3 prior claims', text:
+`Claim notes – Marcus R.
+
+Vehicle stolen from the parking area of his apartment complex in San Diego, CA sometime overnight on August 1st. Marcus only reported it to us on 18 Aug 2026. He is claiming $42,000 for the vehicle; his deductible is $1,000.
+
+New customer: policy started six months ago. He has three previous claims on file. He has given a written statement but has not supplied a police report yet.` },
+  { title: 'Water damage, two stories', blurb: 'An ambiguous 09/04 date and conflicting accounts', text:
+`Subject: Water damage claim – Orlando FL
+
+Hi team, Mrs. Alvarez reports water damage to her kitchen and hallway at her home in Orlando, Florida, discovered on 09/04/2026. She says a burst pipe caused it, but the plumber's statement says there was no burst pipe. Filed with us on 6 Sept.
+
+Contractor quote: $67,000. Policy deductible is $2,500. She's been a customer for seven years with one prior claim (roof, 2023). We have the incident statement and the plumber's inspection report; no photos yet.` },
+  { title: 'Vague front-desk note', blurb: 'Missing dates and type: the card asks you', text:
+`Quick note from the front desk: a policyholder in New York phoned yesterday about a loss. Doesn't know what to call it — "stuff got damaged". Wants to claim around $2,500, deductible $250. Two years with us, no earlier claims. Didn't say whether anything was sent in.` },
+];
+
+const S = { text: '', parsed: { fields: {}, docs: [] }, v: {}, origin: {}, meta: {}, hint: {}, docOv: {}, cmp: { type: false, state: false, size: false } };
+KEYS.forEach(k => { S.v[k] = ''; S.origin[k] = 'none'; S.meta[k] = null; S.hint[k] = ''; });
+const locked = (k) => S.origin[k] === 'you' || S.origin[k] === 'confirmed';
+const hasNotes = () => S.text.trim().length >= 10;
+
+const notes = $('#notes'), backdrop = $('#backdrop'), editor = $('#editor');
+
+/* ---- build static bits ---- */
+$('#f-state').innerHTML = '<option value="">Select…</option>' + STATES.map(([c, n]) => `<option value="${c}">${c} · ${n}</option>`).join('');
+$('#types').innerHTML = TYPE_OPTS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="false">${l}</button>`).join('');
+$('#examples').innerHTML = SAMPLES.map((s, i) => `<button type="button" class="ex" data-i="${i}"><b>${esc(s.title)}</b><span>${esc(s.blurb)}</span></button>`).join('');
+
+const PICKS = {
+  incident_date: () => [['Today', TODAY], ['Yesterday', addDays(TODAY, -1)], ...(S.v.claim_filed_date ? [['Same as filing', S.v.claim_filed_date]] : [])],
+  claim_filed_date: () => [['Today', TODAY], ...(S.v.incident_date ? [['Same as incident', S.v.incident_date]] : [])],
+  deductible: () => [250, 500, 1000, 2500].map(n => [money(n), String(n)]),
+  previous_claims_count: () => ['0', '1', '2', '3'].map(n => [n, n]),
+  policyholder_tenure_years: () => [['Under 1 yr', '0.5'], ['1', '1'], ['2', '2'], ['5', '5'], ['10', '10']],
+};
+
+/* ---- parse + state ---- */
+const changedKeys = new Set();
+function reparse() {
+  S.parsed = parseNotes(S.text, TODAY);
+  for (const k of KEYS) {
+    const p = S.parsed.fields[k];
+    S.hint[k] = p ? String(p.value) : '';
+    if (locked(k)) continue;
+    const nv = p ? String(p.value) : '';
+    if (nv !== S.v[k] && nv !== '') changedKeys.add(k);
+    S.v[k] = nv; S.meta[k] = p || null;
+    S.origin[k] = p ? (p.conf === 'check' ? 'check' : 'text') : 'none';
+  }
+  drawBackdrop();
+}
+function drawBackdrop() {
+  const spans = [];
+  for (const k of KEYS) { const p = S.parsed.fields[k]; if (p) p.spans.forEach(([s, e]) => spans.push({ s, e, k, cls: MARK_CLS[k] })); }
+  for (const d of currentDocs()) {
+    const cls = d.status === 'available' ? 'm-doc-ok' : d.status === 'missing' ? 'm-doc-miss' : 'm-doc-unclear';
+    (d.spans || []).forEach(([s, e]) => spans.push({ s, e, k: 'doc:' + d.name, cls }));
+  }
+  spans.sort((a, b) => a.s - b.s || b.e - a.e);
+  let out = '', pos = 0;
+  for (const sp of spans) {
+    if (sp.s < pos || sp.e <= sp.s) continue;
+    out += esc(S.text.slice(pos, sp.s)) + `<mark class="${sp.cls}" data-k="${esc(sp.k)}" data-s="${sp.s}" data-e="${sp.e}">${esc(S.text.slice(sp.s, sp.e))}</mark>`;
+    pos = sp.e;
+  }
+  backdrop.innerHTML = out + esc(S.text.slice(pos)) + '​';
+  backdrop.scrollTop = notes.scrollTop;
+}
+function currentDocs() {
+  const list = [], seen = new Set();
+  for (const d of S.parsed.docs) {
+    seen.add(d.name);
+    const ov = S.docOv[d.name];
+    if (ov === 'removed') continue;
+    list.push({ name: d.name, status: ov || d.status, byYou: !!ov, reason: ov ? '' : d.reason, spans: d.spans });
+  }
+  for (const [name, ov] of Object.entries(S.docOv)) if (!seen.has(name) && ov !== 'removed') list.push({ name, status: ov, byYou: true, reason: '', spans: [] });
+  return list;
+}
+
+/* ---- validation ---- */
+function check(k) {
+  const v = S.v[k];
+  if (v === '') return { err: '', warn: '' };
+  const n = Number(v);
+  switch (k) {
+    case 'incident_date': return { err: v > TODAY ? 'That date is in the future.' : '', warn: '' };
+    case 'claim_filed_date':
+      if (v > TODAY) return { err: 'That date is in the future.', warn: '' };
+      if (S.v.incident_date && v < S.v.incident_date) return { err: 'Filing is before the incident date.', warn: '' };
+      return { err: '', warn: '' };
+    case 'claim_amount': return { err: !Number.isFinite(n) || n < 0 ? 'Enter an amount.' : n > 1e9 ? 'Too large.' : '', warn: '' };
+    case 'deductible': return { err: !Number.isFinite(n) || n < 0 ? 'Enter an amount.' : '', warn: Number.isFinite(n) && S.v.claim_amount !== '' && n > Number(S.v.claim_amount) ? 'Larger than the claim amount.' : '' };
+    case 'previous_claims_count': return { err: !Number.isInteger(n) || n < 0 || n > 1000 ? 'Whole number from 0 up.' : '', warn: '' };
+    case 'policyholder_tenure_years': return { err: !Number.isFinite(n) || n < 0 || n > 100 ? 'Between 0 and 100 years.' : '', warn: '' };
+    default: return { err: '', warn: '' };
+  }
+}
+const isReady = (k) => S.v[k] !== '' && !check(k).err;
+
+/* ---- render ---- */
+function fieldDisplay(k) {
+  const v = S.v[k];
+  if ((k === 'claim_amount' || k === 'deductible') && v !== '' && Number.isFinite(Number(v))) return Number(v).toLocaleString('en-US');
+  return v;
+}
+function render() {
+  const has = hasNotes();
+  $('#count').textContent = `${S.text.length} / 6000`;
+  for (const k of KEYS) {
+    const cell = $('#cell-' + k), o = S.origin[k], optional = k === 'claim_type';
+    let state = o === 'none' ? (has && !optional ? 'need' : 'idle') : o === 'confirmed' ? 'you' : o;
+    cell.dataset.o = state;
+    const badgeHost = k === 'claim_type' ? cell.querySelector('[data-badge]') : cell.querySelector('[data-badgewrap]');
+    const canJump = (state === 'text' || state === 'check') && S.meta[k] && S.meta[k].spans.length;
+    const label = state === 'text' ? 'From notes' : state === 'check' ? 'Check' : state === 'you' ? (o === 'confirmed' ? 'Confirmed' : 'You') : state === 'need' ? 'Needs you' : (optional && has ? 'Auto-detect' : 'Waiting');
+    const html = canJump ? `<button type="button" class="badge ${state}" data-jump="${k}" title="Show where this came from">${label} ↗</button>` : `<span class="badge ${state}">${label}</span>`;
+    if (k === 'claim_type') cell.querySelector('.cell-top').lastElementChild.outerHTML = html; else badgeHost.innerHTML = html;
+
+    const sub = cell.querySelector('[data-sub]'); const parts = [];
+    const c = check(k);
+    if (c.err) parts.push(`<span class="err" role="alert">${esc(c.err)}</span>`);
+    else if (c.warn) parts.push(`<span class="warn">${esc(c.warn)}</span>`);
+    if (state === 'check' && S.meta[k]) {
+      if (S.meta[k].reason) parts.push(`<span class="why">${esc(S.meta[k].reason)}</span>`);
+      parts.push(`<button type="button" class="linkbtn" data-confirm="${k}">Looks right</button>`);
+    }
+    if (state === 'you' && S.hint[k] && S.hint[k] !== S.v[k]) {
+      const shown = k === 'state' ? S.hint[k] : (k === 'claim_amount' || k === 'deductible') ? money(Number(S.hint[k])) : S.hint[k];
+      parts.push(`<span>Notes say <b>${esc(shown)}</b></span><button type="button" class="pick" data-usehint="${k}">Use that</button>`);
+    }
+    if (state === 'need' && PICKS[k]) parts.push(...PICKS[k]().map(([l, val]) => `<button type="button" class="pick" data-pick="${k}" data-val="${esc(val)}">${esc(l)}</button>`));
+    sub.innerHTML = parts.join('');
+
+    const input = k === 'claim_type' ? null : $('#f-' + k);
+    if (input && document.activeElement !== input) input.value = fieldDisplay(k);
+    if (changedKeys.has(k)) { cell.classList.remove('flash'); void cell.offsetWidth; cell.classList.add('flash'); }
+  }
+  changedKeys.clear();
+  $$('#types button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.v.claim_type)));
+
+  renderDocs(); renderSignals(); renderCompare(); renderCTA();
+  drawBackdrop();
+}
+function renderDocs() {
+  const docs = currentDocs();
+  $('#docs').innerHTML = docs.length ? docs.map(d => `
+    <div class="doc" data-s="${d.status}">
+      <span class="nm" data-hot="doc:${esc(d.name)}" tabindex="0">${esc(d.name)}</span>
+      <span class="two" role="group" aria-label="${esc(d.name)} status">
+        <button type="button" class="ok" data-doc="${esc(d.name)}" data-set="available" aria-pressed="${d.status === 'available'}">In hand</button>
+        <button type="button" class="no" data-doc="${esc(d.name)}" data-set="missing" aria-pressed="${d.status === 'missing'}">Not provided</button>
+      </span>
+      <button type="button" class="rm" data-doc="${esc(d.name)}" data-set="removed" aria-label="Remove ${esc(d.name)}">×</button>
+    </div>`).join('') : '<span class="hint">Nothing detected yet. Add what the handler has actually received.</span>';
+  const have = new Set(docs.map(d => d.name));
+  $('#adddocs').innerHTML = DOC_SUGGEST.filter(n => !have.has(n)).map(n => `<button type="button" class="pick" data-adddoc="${esc(n)}">+ ${esc(n)}</button>`).join('');
+  const unclear = docs.filter(d => d.status === 'unclear');
+  const why = unclear.map(d => d.reason).filter(Boolean)[0];
+  $('#docnote').textContent = unclear.length ? `${unclear.length} mentioned but unconfirmed: ${why || 'mark each as in hand or not provided.'} Only “In hand” items are sent.` : 'Only “In hand” items are sent. Names only; document content isn’t read.';
+}
+function renderSignals() {
+  const delay = daysBetween(S.v.incident_date, S.v.claim_filed_date);
+  const net = S.v.claim_amount !== '' && S.v.deductible !== '' ? Number(S.v.claim_amount) - Number(S.v.deductible) : null;
+  const prior = S.v.previous_claims_count === '' ? null : Number(S.v.previous_claims_count);
+  const ten = S.v.policyholder_tenure_years === '' ? null : Number(S.v.policyholder_tenure_years);
+  const tile = (label, val, warn) => `<div class="signal${warn ? ' warn' : ''}"><small>${label}</small><strong>${val}</strong></div>`;
+  $('#signals').innerHTML =
+    tile('Filing delay', delay === null || delay < 0 ? '—' : `${delay}d`, delay !== null && delay > 14) +
+    tile('Net exposure', net === null || !Number.isFinite(net) ? '—' : money(net), false) +
+    tile('Prior claims', prior === null || !Number.isFinite(prior) ? '—' : prior, prior !== null && prior >= 3) +
+    tile('Policy age', ten === null || !Number.isFinite(ten) ? '—' : (ten < 1 ? '<1 yr' : `${ten} yr`), ten !== null && ten < 1);
+}
+function compareFilters() {
+  const f = {};
+  if (S.cmp.type && S.v.claim_type) f.claim_type = S.v.claim_type;
+  if (S.cmp.state && S.v.state) f.state = S.v.state;
+  if (S.cmp.size && S.v.claim_amount !== '' && Number(S.v.claim_amount) > 0) { f.min_amount = Math.round(Number(S.v.claim_amount) * 0.5); f.max_amount = Math.round(Number(S.v.claim_amount) * 1.5); }
+  return f;
+}
+function renderCompare() {
+  const chips = [
+    ['type', S.v.claim_type ? `Same type · ${S.v.claim_type}` : 'Same type', !S.v.claim_type],
+    ['state', S.v.state ? `Same state · ${S.v.state}` : 'Same state', !S.v.state],
+    ['size', 'Similar size · ±50%', !(S.v.claim_amount !== '' && Number(S.v.claim_amount) > 0)],
+  ];
+  $('#compare').innerHTML = chips.map(([k, l, dis]) => `<button type="button" class="chip" data-cmp="${k}" aria-pressed="${S.cmp[k] && !dis}" ${dis ? 'disabled' : ''}>${esc(l)}</button>`).join('');
+  const f = compareFilters(); const bits = ['settled claims'];
+  if (f.claim_type) bits.push(f.claim_type); if (f.state) bits.push(f.state);
+  if (f.min_amount !== undefined) bits.push(`${money(f.min_amount)}–${money(f.max_amount)}`);
+  $('#compareLine').textContent = 'Comparing with: ' + bits.join(' · ') + (bits.length === 1 ? ' (everything, as today)' : '');
+}
+function missingList() {
+  const miss = REQUIRED.filter(k => !isReady(k));
+  return { miss, notesOk: hasNotes() };
+}
+function renderCTA() {
+  const { miss, notesOk } = missingList();
+  const readyN = REQUIRED.length - miss.length;
+  const checks = REQUIRED.filter(k => S.origin[k] === 'check').length;
+  $('#progress').innerHTML = REQUIRED.map(k => `<i class="${isReady(k) ? (S.origin[k] === 'check' ? 'chk' : 'on') : ''}"></i>`).join('');
+  const st = $('#status');
+  st.textContent = !notesOk ? 'Waiting for notes' : miss.length ? `${readyN} of ${REQUIRED.length} ready` + (checks ? ` · ${checks} to check` : '') : `All ${REQUIRED.length} ready` + (checks ? ` · ${checks} to check` : '');
+  st.classList.toggle('ready', notesOk && !miss.length);
+  const go = $('#go'); const ready = notesOk && !miss.length;
+  go.classList.toggle('wait', !ready);
+  go.innerHTML = ready ? 'Build investigation brief <span aria-hidden="true">→</span> <kbd>Ctrl ⏎</kbd>'
+    : !notesOk ? 'Paste or type the incident first'
+    : `${miss.length} detail${miss.length > 1 ? 's' : ''} to go: ${miss.slice(0, 3).map(k => LABEL[k]).join(', ')}${miss.length > 3 ? '…' : ''}`;
+  $('#ctaNote').textContent = ready && checks ? `${checks} value${checks > 1 ? 's' : ''} still marked “check”. You can build now or confirm them first.` : '';
+}
+
+/* ---- events ---- */
+function onNotes() { S.text = notes.value; reparse(); render(); }
+notes.addEventListener('input', onNotes);
+notes.addEventListener('scroll', () => { backdrop.scrollTop = notes.scrollTop; });
+function loadText(t, append) {
+  const base = append && S.text.trim() ? S.text.replace(/\s+$/, '') + '\n\n— — —\n\n' : '';
+  notes.value = (base + t).slice(0, 6000);
+  onNotes();
+}
+$('#examples').addEventListener('click', (e) => {
+  const b = e.target.closest('.ex'); if (!b) return;
+  resetAll(false); loadText(SAMPLES[+b.dataset.i].text, false); notes.scrollTop = 0; backdrop.scrollTop = 0;
+});
+
+function setValue(k, val, origin) { S.v[k] = val; S.origin[k] = val === '' ? 'none' : origin; if (origin === 'you') S.meta[k] = null; }
+KEYS.filter(k => k !== 'claim_type').forEach(k => {
+  const input = $('#f-' + k);
+  input.addEventListener('input', () => {
+    let v = input.value.trim();
+    if (k === 'claim_amount' || k === 'deductible') v = v.replace(/[$,\s]/g, '');
+    setValue(k, v, 'you'); render();
+  });
+  input.addEventListener('blur', () => { input.value = fieldDisplay(k); });
+  input.addEventListener('change', () => { render(); });
+});
+$('#types').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.v.claim_type = b.dataset.v; S.origin.claim_type = b.dataset.v === '' ? 'none' : 'you'; render();
+});
+/* buttons are re-created on every render, so hand keyboard focus back to something sensible */
+const focusField = (k) => { const el = k === 'claim_type' ? $('#types button[aria-pressed="true"]') : $('#f-' + k); if (el) el.focus({ preventScroll: true }); };
+const refocus = (attr, val) => { const el = $$(`[${attr}]`).find(x => x.dataset[attr.replace('data-', '')] === val); if (el) el.focus({ preventScroll: true }); };
+$('.card').addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.jump) return jumpTo(t.dataset.jump);
+  if (t.dataset.confirm) { const k = t.dataset.confirm; S.origin[k] = 'confirmed'; render(); return focusField(k); }
+  if (t.dataset.pick) { const k = t.dataset.pick; setValue(k, t.dataset.val, 'you'); changedKeys.add(k); render(); return focusField(k); }
+  if (t.dataset.usehint) { const k = t.dataset.usehint, p = S.parsed.fields[k]; S.v[k] = S.hint[k]; S.meta[k] = p; S.origin[k] = p && p.conf === 'check' ? 'check' : 'text'; changedKeys.add(k); render(); return focusField(k); }
+  if (t.dataset.doc) {
+    const name = t.dataset.doc, set = t.dataset.set; S.docOv[name] = set; render();
+    if (set !== 'removed') $$('[data-doc]').find(x => x.dataset.doc === name && x.dataset.set === set)?.focus({ preventScroll: true });
+    return;
+  }
+  if (t.dataset.adddoc) { const name = t.dataset.adddoc; S.docOv[name] = 'available'; render(); $$('[data-doc]').find(x => x.dataset.doc === name && x.dataset.set === 'available')?.focus({ preventScroll: true }); return; }
+  if (t.dataset.cmp) { const k = t.dataset.cmp; S.cmp[k] = !S.cmp[k]; render(); refocus('data-cmp', k); return; }
+});
+
+/* cross-highlight: hover/focus a card field to light up its source text */
+function setHot(key, on) { $$('mark', backdrop).forEach(m => m.classList.toggle('hot', on && m.dataset.k === key)); }
+$('.card').addEventListener('mouseover', (e) => { const c = e.target.closest('[data-k],[data-hot]'); if (c) setHot(c.dataset.k || c.dataset.hot, true); });
+$('.card').addEventListener('mouseout', (e) => { const c = e.target.closest('[data-k],[data-hot]'); if (c) setHot(c.dataset.k || c.dataset.hot, false); });
+$('.card').addEventListener('focusin', (e) => { const c = e.target.closest('[data-k],[data-hot]'); if (c) setHot(c.dataset.k || c.dataset.hot, true); });
+$('.card').addEventListener('focusout', (e) => { const c = e.target.closest('[data-k],[data-hot]'); if (c) setHot(c.dataset.k || c.dataset.hot, false); });
+function jumpTo(k) {
+  const m = $$('mark', backdrop).find(x => x.dataset.k === k); if (!m) return;
+  notes.scrollTop = Math.max(0, m.offsetTop - 70); backdrop.scrollTop = notes.scrollTop;
+  notes.focus({ preventScroll: true }); notes.setSelectionRange(+m.dataset.s, +m.dataset.e);
+  setHot(k, true); setTimeout(() => setHot(k, false), 1400);
+}
+
+/* drop a text file to load it, anything else is listed by name */
+editor.addEventListener('dragover', (e) => { e.preventDefault(); editor.classList.add('drag'); });
+editor.addEventListener('dragleave', () => editor.classList.remove('drag'));
+editor.addEventListener('drop', async (e) => {
+  e.preventDefault(); editor.classList.remove('drag');
+  for (const f of Array.from(e.dataTransfer.files)) {
+    if (/\.(txt|eml|md|csv|log)$/i.test(f.name) || f.type.startsWith('text/')) { loadText(await f.text(), true); toast(`Loaded ${f.name}`); }
+    else {
+      const base = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().toLowerCase();
+      const hit = DOC_VOCAB.find(([, rx]) => rx.test(base));
+      const name = hit ? hit[0] : base; S.docOv[name] = 'available'; render();
+      toast(`Added “${name}” by name only; content isn’t read`);
+    }
+  }
+});
+
+/* layout toggle, clear, build */
+function setView(split) {
+  document.body.classList.toggle('fields-only', !split);
+  $('#viewSplit').setAttribute('aria-pressed', String(split)); $('#viewFields').setAttribute('aria-pressed', String(!split));
+}
+$('#viewSplit').onclick = () => setView(true); $('#viewFields').onclick = () => setView(false);
+function resetAll(clearText = true) {
+  KEYS.forEach(k => { S.v[k] = ''; S.origin[k] = 'none'; S.meta[k] = null; S.hint[k] = ''; });
+  S.docOv = {}; S.cmp = { type: false, state: false, size: false };
+  if (clearText) { notes.value = ''; S.text = ''; S.parsed = { fields: {}, docs: [] }; }
+}
+$('#clearBtn').onclick = () => { resetAll(true); render(); notes.focus(); };
+
+function buildPayload() {
+  const docs = currentDocs();
+  const o = (k) => S.origin[k] === 'text' ? 'extracted' : S.origin[k] === 'check' ? 'extracted_unconfirmed' : S.origin[k] === 'confirmed' ? 'extracted_confirmed' : 'handler';
+  const claim = {
+    description: S.text.trim(),
+    claim_type: S.v.claim_type || null,
+    state: S.v.state,
+    incident_date: S.v.incident_date,
+    claim_filed_date: S.v.claim_filed_date,
+    claim_amount: Number(S.v.claim_amount),
+    deductible: Number(S.v.deductible),
+    previous_claims_count: Number(S.v.previous_claims_count),
+    policyholder_tenure_years: Number(S.v.policyholder_tenure_years),
+    provided_documents: docs.filter(d => d.status === 'available').map(d => d.name),
+  };
+  const prov = {};
+  KEYS.forEach(k => { if (S.v[k] !== '') prov[k] = { origin: o(k), ...(S.parsed.fields[k] && S.origin[k] !== 'you' ? { span: S.parsed.fields[k].spans[0] } : {}) }; });
+  const not = docs.filter(d => d.status === 'missing').map(d => d.name);
+  return { claim_input: claim, search_filters: compareFilters(), _intake: { source: 'pasted_note', note_chars: S.text.length, fields: prov, documents_flagged_not_provided: not } };
+}
+function build() {
+  const { miss, notesOk } = missingList();
+  if (!notesOk) { notes.focus(); return; }
+  if (miss.length) {
+    const k = miss[0], cell = $('#cell-' + k);
+    cell.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    cell.classList.remove('nudge'); void cell.offsetWidth; cell.classList.add('nudge');
+    const input = $('#f-' + k); if (input) input.focus({ preventScroll: true });
+    return;
+  }
+  $('#payload').textContent = JSON.stringify(buildPayload(), null, 2);
+  $('#dlg').showModal();
+}
+$('#go').onclick = build;
+document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); build(); } });
+$('#closeBtn').onclick = () => $('#dlg').close();
+$('#copyBtn').onclick = async () => { try { await navigator.clipboard.writeText($('#payload').textContent); toast('Copied'); } catch { toast('Copy blocked by the browser'); } };
+
+let toastTimer;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); }
+
+render();
+</script>
+</body>
+</html>

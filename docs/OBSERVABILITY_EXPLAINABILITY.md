@@ -26,9 +26,12 @@ everything it did before failing.
 investigation                      (run)        total time until the brief was ready
 ├─ classify                        (stage)
 │  └─ llm.classification           (model)      model, attempts, tokens, finish reason
-├─ retrieve
+├─ retrieve                        (the next four overlap in time: cohort.statistics starts first)
+│  ├─ cohort.statistics            (compute)    DuckDB figures; its cross-check waits for the passage search
 │  ├─ knowledge.retrieve           (service)
-│  │  └─ synapt.retrieve           (service)    attempts; list_tools, search calls with their queries
+│  │  └─ synapt.retrieve           (service)    attempts; list_tools, search calls with their queries, and the
+│  │                                            ticket-store call for similar past claims (trident_query, ticket_mode=only)
+│  ├─ knowledge.graph              (service)    the graph lookup, started once the passages are in
 │  ├─ history.search               (retrieval)  candidates, per-method ranks and points per result
 │  └─ feedback.lessons             (retrieval)
 ├─ investigate  └─ llm.investigation
@@ -102,7 +105,9 @@ Pick a query (search, or the recent chips) to see, in order:
 3. **How comparable claims were found and ranked.** The pool, the three methods and their weights, the
    formula `1/(60+keyword rank) + 1/(60+numeric rank) + 0.5/(60+semantic rank)`, the candidate funnel, and a
    stacked bar per comparable claim showing each method's share of its score, with the ranks written out.
-   Administrators also see what the knowledge store was asked.
+   The semantic rank is the order in which Synapt's ticket store returned similar past claims (2 to 4 per claim
+   since 13 October 2026); a claim it adds is labelled "Related in meaning: Synapt's ticket store ranked this
+   past claim #N". Administrators also see what the knowledge store was asked.
 4. **Why this handling priority.** The meter with tier thresholds, the points to the next tier, and the full
    rubric: which factors applied, which did not, and what each earned.
 5. **What the model estimates rest on.** For amount, resolution time and fraud flag: the value, the interval
@@ -121,13 +126,13 @@ Pick a query (search, or the recent chips) to see, in order:
 | **Handler review** | A person accepts the brief or requests a revision. Never approves, denies or pays the claim. | Yes |
 | **System evaluation suite** (administrators) | The golden claims, and the model-graded metrics when they were run. A regression check on the system, not a score for this brief. | No |
 
-The validation rules are `VALIDATION_CHECKS` in `workflow.py`. `validate_brief` still returns the same
+The validation rules are `VALIDATION_CHECKS` in `investigation/workflow.py`. `validate_brief` still returns the same
 `passed` and `issues` as before; `checks` is added alongside.
 
 ## Who sees what
 
 Handlers never see model or provider names, prompts, token counts, retrieval queries or raw trace data; the
-explanation they get is written without them (`explain.py` applies the same wording rules as the brief
+explanation they get is written without them (`observability/explain.py` applies the same wording rules as the brief
 itself). Administrators see all of it. The rules are enforced by the API, not just hidden in the interface.
 
 | Endpoint | Handler | Administrator |
@@ -171,3 +176,13 @@ review.
 * The judge's verdict can arrive after the brief is shown, so the Overview can briefly count a run's review
   as pending.
 * The service is a single process; traces are not shipped to an external collector.
+
+## Evaluation runs (Observability, administrators)
+
+The evaluation suite (Quality & models) runs the golden cases as ordinary traced investigations (origin "evaluation") and,
+when selected, asks an LLM judge to score each case's brief on three metrics. The judge works after the investigation has
+finished, so its calls are recorded afterwards under that run's root span: a `judge.metric` span per metric with an
+`llm.judge_metric` span per model call, all flagged background (they never count as time a handler waited, and a run's duration
+is unchanged). The **Evaluation runs** tab lists the recent runs from the audit log: golden cases passed, judge status and
+model, metrics scored and met, mean score, judge model calls, duration, and a button for each case's trace. Runs saved before
+this change show "Not traced" for the judge calls. The judge's scores themselves are unchanged and are also on the Quality page.

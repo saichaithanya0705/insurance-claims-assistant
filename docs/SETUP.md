@@ -12,12 +12,14 @@ command below was run end to end on a clean copy of the repository. Commands are
 | Disk | About 7 GB free: 2.5 GB dataset, 1.5 GB Python environment, models and corpus |
 | Memory | 8 GB recommended. DuckDB is capped at 3 GB; lower `CLAIMS_DUCKDB_MEMORY` on small machines |
 | Network | Hugging Face (dataset), NVIDIA (language models) and `synapt.example.com` (Synapt) |
-| Accounts | Synapt login email, password and provider ID; an NVIDIA API key. Needed for live mode only |
+| Accounts | **Synapt** login email, password and provider ID: required, the application does not start without them. An NVIDIA API key is needed only for model-written briefs |
 | Node.js | Not needed. The compiled UI is committed. Install it only if you edit `frontend/` |
 
-You can try the application with no accounts at all: leave `SYNAPT_MODE=fixture` and
-`AGENT_MODE=fixture` (the defaults). Everything works except live Synapt retrieval and
-model-written briefs.
+Synapt is not optional. It is the knowledge layer (procedures, past claims in its ticket store, handler lessons), and
+there is no mode, setting or fallback that runs the application without it: with the Synapt login
+missing the application refuses to start, and with Synapt unreachable an investigation fails visibly
+and produces no brief. `AGENT_MODE=fixture` (the default) needs no NVIDIA account; it replaces only
+the model-written brief with deterministic rules, and the evidence still comes from live Synapt.
 
 ## 1. Get the code and dependencies
 
@@ -42,14 +44,13 @@ notepad .env
 
 All paths in `.env` are relative to the repository, so it works unchanged on any machine. Never
 make this repository public while `.env` is tracked; if you do, untrack it and rotate every key.
-For the full live system the values are:
+For the full system the values are (the three Synapt values are required):
 
 | Key | Value |
 |---|---|
-| `SYNAPT_MODE` | `live` |
 | `SYNAPT_USERNAME` | your Synapt login **email** (the field name is already set to `email`) |
 | `SYNAPT_PASSWORD` | your Synapt password |
-| `SYNAPT_PROVIDER_ID` | `synapt_final_capstone` (the provider that holds the claim cards) |
+| `SYNAPT_PROVIDER_ID` | `synapt_capstone1` (procedures as documents, past claims in its ticket store) |
 | `AGENT_MODE` | `live` |
 | `NVIDIA_API_KEY` | your key from build.nvidia.com |
 | `JUDGE_MODE` | `inline` to have a second, independent model review every brief (`off` to skip) |
@@ -68,18 +69,41 @@ This runs four steps and prints a result line for each:
 |---|---|---|
 | `data` | Downloads `insurance_claims_100M.parquet` (2.5 GB) from Hugging Face, then **verifies its SHA256 against the hash Hugging Face publishes**, the row count (100,000,000) and the 13 column names | 3 to 30 min, depending on bandwidth (180 s measured on a fast link). Interrupted downloads resume |
 | `train` | Draws a repeatable 600,000-row sample (`CLAIMS_TRAIN_ROWS`) from the file and trains the amount, resolution-time and fraud-flag models | about 4 to 5 minutes (260 s measured in a fresh clone) |
-| `corpus` | Writes 1,000 claim cards (200 per type) and the 5 procedures as upload batches under `artifacts/synapt/corpus-v3` | about 6 s |
+| `corpus` | Writes 10,000 profile cards (2,000 per claim type) and the 5 original procedures under `artifacts/synapt/corpus-profile-balanced-2026-10-09`. Local only: its `claim_cards.parquet` is what the degraded-mode fallback searches. The cards are no longer in Synapt (since 13 October 2026) and must not be uploaded to `synapt_capstone1` | about 25 s |
 | `check` | Reports what is ready and what is missing | a few seconds |
 
-Run any step alone with `uv run python scripts/bootstrap.py data|train|corpus|ingest|check`.
+Run any step alone with `uv run python scripts/bootstrap.py data|train|corpus|check`.
 Re-running is safe: a verified download is reused, and models are retrained only with `--retrain`.
+(`ingest` also exists but uploads the card batches; do not run it against `synapt_capstone1`, see step 4.)
+
+**Recommended, about 30 s: the cohort summary.** The "how were claims like this settled?" figures are an exact count over all 100 million rows,
+which takes 4 to 10 s per investigation. Counting every group once makes it take 4 ms, with the same numbers:
+
+```powershell
+uv run python scripts/build_cohort_summary.py        # writes data/derived/cohort_summary.duckdb (git-ignored)
+```
+
+The script then compares 25 random descriptions with the full scan (about 3 minutes) and deletes the file if one number differs
+(`--verify 0` skips this). The application uses the file only if it was built from this very dataset (SHA-256), cutoff date and band edges; if
+it is missing or stale it says nothing and scans as before, so skipping this step changes speed, never an answer.
+
+**Recommended, about 5 to 9 minutes, 2.6 GB: the sorted copy.** The search for the 300 closest past claims reads every claim of the new
+claim's type (35 million for auto). A copy of the dataset in DuckDB's own format, sorted by type, state and amount, with each claim's closing
+date stored once, makes it about twice as fast or better:
+
+```powershell
+uv run python scripts/build_claims_copy.py           # writes data/derived/claims_sorted.duckdb (git-ignored)
+```
+
+The script then runs 20 searches on both the copy and the Parquet file (random claims, with and without a state, an outcome or an amount
+range) and deletes the copy if a single row or its order differs. The application uses it only if it records this dataset's SHA-256, row count
+and layout; otherwise it searches the Parquet file as before, so skipping this step changes speed, never an answer.
 
 ## 4. Synapt provider
 
-The cards live in Synapt's cloud, not on your machine. The provider `synapt_final_capstone`
-already holds the 5 procedures, the 1,000 base claim cards and 19,887 expansion cards (63 documents,
-20,914 chunks), so on a second computer you do **not**
-upload anything. Confirm that it is reachable and populated:
+The knowledge lives in Synapt's cloud, not on your machine. The provider `synapt_capstone1` already holds the
+17 procedures as documents (18 documents, 39 chunks; the 18th is Synapt's own episode store) and 2,000 past claims
+in its ticket store, so on a second computer you do **not** upload anything. Confirm that it is reachable and populated:
 
 ```powershell
 uv run python scripts/verify_synapt_store.py
@@ -89,35 +113,43 @@ uv run python scripts/synapt_ingest.py status
 `verify_synapt_store.py` is the authoritative check (and what `bootstrap.py check` runs): it reads
 document sizes from Synapt's graph and compares them with the committed
 `data/synapt/expected_inventory.json`, so it gives the same answer on every machine. Expect
-`base corpus: 10/10`, `expansion corpus: 40/40` and `procedures: 5/5`. `status` prints document and
-chunk counts (expect 63 documents and 20,914 chunks; `ledger_batches: 0` on a second machine is normal).
+`procedures: 17/17 found by source id`, `ticket store: 2,000 tickets (400 held out by Synapt), labels fraud_flag, resolution`
+and `18 documents in all, 39 chunks: procedures and Synapt's own episode memory`. It fails if a large document that is not
+a procedure (a leftover card batch) is still in the provider. `status` prints document and chunk
+counts (expect 18 documents and 39 chunks; the total may grow as Synapt records further episodes from handler
+ratings and query-agent sessions, and `ledger_batches: 0` on a second machine is normal).
 
-`synapt_ingest.py verify --sample 20` is a semantic-precision spot check that only works on the machine
-that performed the upload. It samples claims from the local upload ledger
-(`artifacts/synapt/corpus-v3/ledger.jsonl`), which is not in Git, so anywhere else it exits with
-`No submitted batches in the ledger yet`. That is expected, not a fault: use `verify_synapt_store.py`.
-On the original machine it asks Synapt for cards similar to 20 sampled claims and reports how often the
-returned cards share the claim's type, state, amount band and history, next to the rate expected by chance.
+**Do not upload claim cards to `synapt_capstone1`.** Until 13 October 2026 it also held 10,000 profile cards as
+20 documents; they were removed because past claims belong in the ticket store, not among the procedures (see
+[SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md#how-the-data-is-split-across-synapt-corrected-13-october-2026)).
+`synapt_ingest.py ingest` (without `--procedures-only`) and `ingest_expanded_cards.py` still upload card batches and
+must not be pointed at this provider. `bootstrap.py ingest` uploads only the procedures (from 13 October 2026) and prints
+how to add the ticket workbook through the console. `synapt_ingest.py verify` measured the card search and
+has nothing to measure here now.
 
-**The corpus built on a laptop is not the corpus in the provider.** `bootstrap.py corpus` rebuilds a
-1,000-card sample deterministically (two builds on one machine and a fresh clone were identical), but
-the sample uploaded earlier was selected differently (most likely by an earlier version of the builder,
-which Git does not retain): only 52 of its 1,000 claims coincide with the rebuilt ones. Nothing at runtime reads the local corpus, so the application is
-unaffected. It matters only if you populate a *new* provider with `bootstrap.py ingest`, which would
-upload a different, equally valid sample. The exact uploaded batches exist only on the original laptop
-(`artifacts/synapt/corpus-v3`, not in Git); `data/synapt/expected_inventory.json` records their sizes
-and hashes.
-
-To populate a **new, empty** provider (created in the Synapt console, knowledge kind), put its ID in
-`.env` and run:
+**The past-claim tickets.** The ticket store was filled from the workbook
+`artifacts/synapt/ticketing-capstone1/claims_tickets_capstone1.xlsx` (2,000 settled claims, 400 per claim type, the
+dataset's own fraud and denial rates), built with:
 
 ```powershell
-uv run python scripts/bootstrap.py ingest --procedures
+uv run python scripts/make_ticketing_sample.py --output artifacts/synapt/ticketing-capstone1 --per-type 400 --natural --name claims_tickets_capstone1
 ```
 
-That uploads 10 batches, one at a time, waiting for each to finish (about 3 minutes per batch).
-It records progress in `artifacts/synapt/corpus-v3/ledger.jsonl`, skips finished batches if you
-re-run, and refuses to start if the provider already contains claim cards (override with `--force`).
+and uploaded in the Synapt console (Data Ingestion, Ticketing): ID column `ticket_id`; Embed `title`, `description`,
+`category`, `region`; Predict `resolution`, `fraud_flag`; every other column Store only.
+
+**Rebuilding the card file gives the same cards.** `bootstrap.py corpus` (or `scripts/build_profile_corpus.py`) is
+deterministic: a rebuild produced 20 of 20 batches byte-identical to the ones once uploaded, so the local fallback
+index holds exactly the cards the provider held. Which claims are chosen, and why, is in
+[CORPUS_STRATEGY.md](CORPUS_STRATEGY.md).
+
+To populate a **new, empty** provider, use the same split: the procedures as documents (`synapt_ingest.py ingest
+--procedures-only --corpus <folder>`, for the 5 original procedures in the profile-corpus folder and the 12 written by
+`scripts/build_procedures.py`), then the ticket workbook through the console as above. This path has not been re-run
+since the split was corrected, and the committed inventory describes `synapt_capstone1` only.
+
+The earlier provider `synapt_final_capstone` (1,000 + 19,887 cards) is untouched; its inventory is kept as
+`data/synapt/expected_inventory.synapt_final_capstone.json`. Do not upload into it again.
 
 ## 5. Optional: local saved-case search model
 
@@ -131,7 +163,7 @@ it the search falls back to ID and text matching.
 ## 6. Run
 
 ```powershell
-uv run uvicorn claims.api:app --host 127.0.0.1 --port 8000
+uv run uvicorn claims.api.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open <http://127.0.0.1:8000>. On first use choose an administrator username and a password of at
@@ -142,7 +174,7 @@ Under **Accounts** you can add ordinary users. API documentation is at `/docs`.
 
 ```powershell
 uv run pytest -q                                   # backend: offline, about 2 minutes
-uv run python scripts/bootstrap.py check           # data, models, corpus, Synapt
+uv run python scripts/bootstrap.py check           # data, models, local card file, Synapt store
 ```
 
 In the application: open **Quality & models** and press **Run evaluations** (golden cases). Tick
@@ -198,7 +230,7 @@ Notes:
 |---|---|---|
 | `data/raw/parquet/` | the 100M-row dataset | no (downloaded) |
 | `artifacts/models/` | trained models | no (trained) |
-| `artifacts/synapt/` | built corpus and upload ledger | no (built) |
+| `artifacts/synapt/` | local card file (fallback), procedure folders, ticket workbook, old upload ledgers | no (built) |
 | `data/runtime/` | databases: saved cases, accounts, checkpoints | no (created on first run) |
 | `data/bootstrap/` | credential-free seed databases copied on first run | yes |
 | `.env` | secrets and mode switches | yes (private repository only) |
@@ -207,18 +239,15 @@ Notes:
 
 For the 7 October corpus and training refresh, see [data expansion](DATA_EXPANSION_2026-10-07.md),
 [ML verification](ML_RETRAINING_2026-10-07.md), and [evaluation audit](EVAL_AUDIT_2026-10-07.md).
-The expanded `claim_cards.parquet` is a validated local artifact. This provider extracts its schema,
-so use the paired `cards/expanded-*.txt` for semantic ingestion. All 40 batches have already been
-submitted through MCP and verified (40 of 40, see step 4); do not upload them again. To re-check:
+Those reports describe card uploads to earlier providers (the 40 expanded batches went to `synapt_final_capstone`);
+`synapt_capstone1` holds no cards since 13 October 2026. To re-check the current provider:
 
 ```powershell
 uv run python scripts/verify_synapt_store.py
 ```
 
-This command makes no provider writes and is exact (it reads document sizes from Synapt's graph).
-A partial retrieval inventory cannot establish that a missing
-card was never ingested. The script never automatically repeats an uncertain write; a retry of an
-explicit rejection requires `--retry-rejected`. Restart a running API after retraining to load the new
+This command makes no provider writes and is exact (it reads document sizes from Synapt's graph and the
+ticket count from its statistics). Restart a running API after retraining to load the new
 model artifact and backend changes.
 
 | Symptom | Cause and fix |
@@ -229,7 +258,9 @@ model artifact and backend changes.
 | Out-of-memory error from DuckDB | Set `CLAIMS_DUCKDB_MEMORY=1500MB` in `.env` |
 | Each search takes 3 to 5 seconds | Expected: it scans 100 million rows. The first query after a reboot is slower while the file cache warms |
 | `Synapt request failed` | Synapt rate-limits logins (HTTP 429). The client now reuses one login and honours `Retry-After`; wait a minute and retry. Run `bootstrap.py check` to see which call fails |
-| `Provider ... already contains historical claim cards` | Intended: another machine uploaded them. Use `status` and `verify`; do not upload twice |
+| `Provider ... already contains historical claim cards` | A card uploader was pointed at a provider that holds cards. `synapt_capstone1` should hold none: do not upload cards to it. Run `verify_synapt_store.py` |
+| `leftover document ...: not a procedure, and too large for one` | A card batch (or another large document) is in the provider. Past claims belong in the ticket store; delete the document in the Synapt console, then re-run `verify_synapt_store.py` |
+| `ticket store: the provider has no ticket store` (or a ticket count other than 2,000) | The ticket workbook is missing or was uploaded differently; see step 4, "The past-claim tickets" |
 | Brief says "Independent review: Failed" | The judge model timed out (60 s per attempt, two attempts; the endpoint is slower when several briefs run at once). The brief is unaffected. Raise `JUDGE_TIMEOUT_SECONDS` (max 120), pick a faster `JUDGE_MODEL`, or set `JUDGE_MODE=off` |
 | Model estimates show "not trained" | Run `bootstrap.py train`, or press **Train models** on the Quality page (about 80 s) |
 | Low on disk space | Use the 3,000-row fallback instead: `uv run python scripts/fetch_dataset.py --count 3000`, and leave `CLAIMS_PARQUET_PATH` pointing at a missing file. Retrieval and models then use that small sample |

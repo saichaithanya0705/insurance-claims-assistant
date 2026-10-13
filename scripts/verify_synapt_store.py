@@ -20,9 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from claims.adapters import LiveSynaptAdapter
-from claims.settings import Settings
-from claims.synapt_inventory import (
+from claims.core.settings import Settings
+from claims.synapt.adapter import LiveSynaptAdapter
+from claims.synapt.inventory import (
     INVENTORY_PATH,
     build_expected,
     load_expected,
@@ -33,11 +33,9 @@ from claims.synapt_inventory import (
 
 async def main(args) -> bool:
     settings = Settings()
-    if settings.synapt_mode != "live":
-        raise SystemExit("Live Synapt access is required: set SYNAPT_MODE=live in .env")
     provider = settings.synapt_provider_id
     expected = (
-        build_expected(args.base_dir, args.expansion_dir)
+        build_expected(None if args.no_base_corpus else args.base_dir, args.expansion_dir)
         if args.write_expected
         else load_expected(args.inventory)
     )
@@ -69,5 +67,7 @@ if __name__ == "__main__":
     parser.add_argument("--json", type=Path, help="save the full report here")
     parser.add_argument("--write-expected", action="store_true", help="rebuild the inventory from local corpora")
     parser.add_argument("--base-dir", type=Path, default=ROOT / "artifacts/synapt/corpus-v3")
+    parser.add_argument("--no-base-corpus", action="store_true",
+                        help="the provider holds one marker-headed corpus only (use with --expansion-dir)")
     parser.add_argument("--expansion-dir", type=Path, default=ROOT / "artifacts/synapt/corpus-2026-10-07")
     raise SystemExit(0 if asyncio.run(main(parser.parse_args())) else 1)

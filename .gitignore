@@ -17,3 +17,9 @@ frontend/node_modules/
 !data/bootstrap/auth.sqlite
 !data/bootstrap/claims.sqlite
 .playwright-mcp/
+
+# Private review preparation (lists weak spots; never commit or share)
+docs/private/
+data/derived/
+
+.env.local

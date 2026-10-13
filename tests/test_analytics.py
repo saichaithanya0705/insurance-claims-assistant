@@ -7,14 +7,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-from claims.analytics import (
+from claims.core.schemas import ClaimInput
+from claims.ml.analytics import (
     FEATURES,
     AnalyticsService,
     calibration_roles,
     feature_dict,
     temporal_split,
 )
-from claims.models import ClaimInput
 
 
 def sample_rows(count=400):

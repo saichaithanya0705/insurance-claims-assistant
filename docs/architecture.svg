@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 860" width="1280" height="860" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1016" width="1400" height="1016" font-family="Segoe UI, Helvetica, Arial, sans-serif">
   <title>AI-Powered Insurance Claims Assistant: architecture</title>
-  <desc>A handler uses a React UI served by a FastAPI service. A LangGraph workflow classifies, retrieves, investigates, assesses risk, recommends, validates, judges and pauses for human review. It reads the 100M-row Parquet dataset through DuckDB, retrieves procedures and claim cards from a Synapt provider over MCP, uses scikit-learn models, and calls NVIDIA NIM models. Reviewed feedback is promoted back into Synapt and later investigations.</desc>
+  <desc>A handler or administrator uses a React UI served by a FastAPI service. Eleven agents each run as a LangGraph node: seven in the investigation graph (classify, investigate, risk, recommend, validate, supervise, judge) and four in the retrieve sub-graph. The investigation graph, checkpointed in SQLite, runs classify, retrieve, investigate, risk, recommend, validate, supervise, judge and review. Retrieve is a sub-graph in which four agents (Policy Passage Retriever, Procedure Graph Navigator, Knowledge Q&amp;A Agent, Claims History Analyst) run side by side and are joined; supervise is a sub-graph that may send a brief back once for repair; the judge runs in the background; review is a human interrupt. Each agent may call only the tools on its roster. The three Synapt agents read the synapt_capstone1 provider over MCP (handling procedures and its knowledge graph as documents, 2,000 settled past claims in its ticket store, promoted lessons), with a labelled local fallback after a real Synapt failure. The Claims History Analyst queries the 100-million-row claims dataset with DuckDB. The Risk Analyst uses scikit-learn models. Model agents call NVIDIA NIM (Nemotron writes, gpt-oss-20b judges). Spans, runs, audit, feedback, side questions and accounts are stored in SQLite. Promoted lessons are ingested into Synapt and a human's rating of a knowledge-base answer is sent to Synapt as feedback.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
@@ -8,149 +8,275 @@
     <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="#0f766e"/>
     </marker>
+    <marker id="arrowSmall" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#0f766e"/>
+    </marker>
     <style>
       .t { fill: #0f172a; }
       .m { fill: #475569; }
+      .a { fill: #0f766e; font-style: italic; }
       .h { font-weight: 700; }
       .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
       .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; }
       .node { fill: #ecfeff; stroke: #0f766e; stroke-width: 1.5; }
+      .sub { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.5; stroke-dasharray: 5 3; }
       .gate { fill: #fffbeb; stroke: #b45309; stroke-width: 1.5; }
       .data { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 1.5; }
       .syn { fill: #ecfdf5; stroke: #047857; stroke-width: 1.5; }
+      .fb { fill: #f8fafc; stroke: #64748b; stroke-width: 1.3; stroke-dasharray: 5 3; }
       .llm { fill: #eff6ff; stroke: #1d4ed8; stroke-width: 1.5; }
       .loop { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.5; stroke-dasharray: 6 4; }
       .line { stroke: #475569; stroke-width: 1.8; fill: none; }
+      .thin { stroke: #0f766e; stroke-width: 1.3; fill: none; }
       .loopline { stroke: #0f766e; stroke-width: 2; fill: none; stroke-dasharray: 7 5; }
+      .tagL { fill: #dbeafe; stroke: #1d4ed8; stroke-width: 1; }
+      .tagR { fill: #f1f5f9; stroke: #64748b; stroke-width: 1; }
+      .tagD { fill: #ede9fe; stroke: #6d28d9; stroke-width: 1; }
+      .tagS { fill: #d1fae5; stroke: #047857; stroke-width: 1; }
+      .tagP { fill: #fef3c7; stroke: #b45309; stroke-width: 1; }
+      .tg { font-size: 9.5px; fill: #0f172a; }
     </style>
   </defs>
-  <rect width="1280" height="860" fill="#ffffff"/>
+  <rect width="1400" height="1016" fill="#ffffff"/>
   <text x="40" y="44" font-size="24" class="t h">AI-Powered Insurance Claims Assistant</text>
-  <text x="40" y="68" font-size="14" class="m">Hybrid retrieval over 100M synthetic claims, Synapt knowledge, multi-stage LangGraph workflow, human review gate</text>
+  <text x="40" y="68" font-size="14" class="m">Synapt knowledge base + 100M-row claims history · eleven agents, each a LangGraph node · human review gate</text>
+
+  <!-- Legend -->
+  <rect x="840" y="34" width="14" height="11" rx="3" class="tagL"/>
+  <text x="860" y="44" font-size="11" class="m">language model</text>
+  <rect x="954" y="34" width="14" height="11" rx="3" class="tagR"/>
+  <text x="974" y="44" font-size="11" class="m">fixed rules</text>
+  <rect x="1046" y="34" width="14" height="11" rx="3" class="tagD"/>
+  <text x="1066" y="44" font-size="11" class="m">data / trained models</text>
+  <rect x="1196" y="34" width="14" height="11" rx="3" class="tagS"/>
+  <text x="1216" y="44" font-size="11" class="m">Synapt</text>
+  <rect x="1266" y="34" width="14" height="11" rx="3" class="tagP"/>
+  <text x="1286" y="44" font-size="11" class="m">person / gate</text>
 
   <!-- Clients -->
-  <rect x="40" y="96" width="250" height="64" rx="12" class="box"/>
-  <text x="56" y="122" font-size="15" class="t h">Handler / Administrator</text>
-  <text x="56" y="143" font-size="12.5" class="m">intake, review, queue, quality</text>
-  <rect x="330" y="96" width="260" height="64" rx="12" class="box"/>
-  <text x="346" y="122" font-size="15" class="t h">React UI (static bundle)</text>
-  <text x="346" y="143" font-size="12.5" class="m">served by the same FastAPI app</text>
-  <path d="M290 128 H330" class="line" marker-end="url(#arrow)"/>
-  <path d="M460 160 V196" class="line" marker-end="url(#arrow)"/>
+  <rect x="40" y="92" width="250" height="76" rx="12" class="box"/>
+  <text x="56" y="118" font-size="15" class="t h">Handler / Administrator</text>
+  <text x="56" y="138" font-size="12" class="m">intake, review, feedback, queue;</text>
+  <text x="56" y="155" font-size="12" class="m">admin: quality, connection, accounts</text>
+  <rect x="314" y="92" width="1046" height="76" rx="12" class="box"/>
+  <text x="330" y="116" font-size="15" class="t h">React UI <tspan font-size="12" font-weight="400" class="m">(Vite build in static/, served by the same FastAPI app)</tspan></text>
+  <text x="330" y="137" font-size="12" class="m">Investigation: claim-sentence intake, live agent team and call list, early preview, brief with evidence and knowledge graph, side chat, feedback  ·  Saved cases  ·  Explainability  ·  Agents</text>
+  <text x="330" y="155" font-size="12" class="m">Administrator only: Observability (traces, metrics)  ·  Quality &amp; models (evaluations, training)  ·  Connection (Synapt status and stats)  ·  Accounts</text>
+  <path d="M290 130 H314" class="line" marker-end="url(#arrow)"/>
+  <path d="M400 168 V182 H194 V196" class="line" marker-end="url(#arrow)"/>
+  <text x="410" y="187" font-size="10.5" class="m">JSON over HTTP · session cookie + CSRF</text>
 
   <!-- FastAPI -->
-  <rect x="40" y="196" width="300" height="396" rx="14" class="panel"/>
-  <text x="58" y="224" font-size="16" class="t h">FastAPI microservice</text>
-  <rect x="56" y="238" width="268" height="62" rx="9" class="box"/>
-  <text x="68" y="260" font-size="13" class="t h">Access control</text>
-  <text x="68" y="280" font-size="12" class="m">login sessions, CSRF, user / admin roles</text>
-  <rect x="56" y="310" width="268" height="62" rx="9" class="box"/>
-  <text x="68" y="332" font-size="13" class="t h">Input guardrails</text>
-  <text x="68" y="352" font-size="12" class="m">strict Pydantic models, date and range checks</text>
-  <rect x="56" y="382" width="268" height="196" rx="9" class="box"/>
-  <text x="68" y="404" font-size="13" class="t h">Core endpoints</text>
-  <text x="68" y="428" font-size="12" class="m">POST /api/investigations</text>
-  <text x="68" y="447" font-size="12" class="m">POST /api/search (hybrid, filtered)</text>
-  <text x="68" y="466" font-size="12" class="m">POST /api/predictions</text>
-  <text x="68" y="485" font-size="12" class="m">GET  /api/queue (priority order)</text>
-  <text x="68" y="504" font-size="12" class="m">POST /api/investigations/{id}/review</text>
-  <text x="68" y="523" font-size="12" class="m">POST /api/investigations/{id}/feedback</text>
-  <text x="68" y="542" font-size="12" class="m">POST /api/feedback/lessons/{id}/promote</text>
-  <text x="68" y="561" font-size="12" class="m">POST /api/models/train, /api/evaluations/run</text>
+  <rect x="40" y="196" width="308" height="568" rx="14" class="panel"/>
+  <text x="58" y="224" font-size="16" class="t h">FastAPI service <tspan font-size="11" font-weight="400" class="m">(api/main.py)</tspan></text>
+  <rect x="56" y="238" width="276" height="58" rx="9" class="box"/>
+  <text x="68" y="258" font-size="13" class="t h">Access control</text>
+  <text x="68" y="278" font-size="11" class="m">sessions, CSRF, API key, user / admin roles</text>
+  <rect x="56" y="306" width="276" height="58" rx="9" class="box"/>
+  <text x="68" y="326" font-size="13" class="t h">Input guardrails</text>
+  <text x="68" y="346" font-size="11" class="m">strict Pydantic schemas; PII masked for models</text>
+  <rect x="56" y="374" width="276" height="272" rx="9" class="box"/>
+  <text x="68" y="394" font-size="13" class="t h">HTTP API</text>
+  <text x="68" y="414" font-size="11" class="t h">Investigate</text>
+  <text x="68" y="430" font-size="11" class="m">POST /api/intake/extract</text>
+  <text x="68" y="446" font-size="11" class="m">POST /api/investigations</text>
+  <text x="68" y="462" font-size="11" class="m">GET  …/{id}   /progress   /preview</text>
+  <text x="68" y="484" font-size="11" class="t h">Review and learn</text>
+  <text x="68" y="500" font-size="11" class="m">POST …/{id}/review   …/{id}/feedback</text>
+  <text x="68" y="516" font-size="11" class="m">POST …/{id}/side-chat   …/query-feedback</text>
+  <text x="68" y="532" font-size="11" class="m">POST /api/feedback/lessons/{id}/promote</text>
+  <text x="68" y="554" font-size="11" class="t h">Explain and operate</text>
+  <text x="68" y="570" font-size="11" class="m">GET  …/{id}/trace   /explanation   /agents</text>
+  <text x="68" y="586" font-size="11" class="m">GET  /api/observability/*   /api/agents/graph</text>
+  <text x="68" y="602" font-size="11" class="m">POST /api/search   /predictions   /models/train</text>
+  <text x="68" y="618" font-size="11" class="m">POST /api/evaluations/run  ·  GET /api/queue</text>
+  <text x="68" y="634" font-size="11" class="m">GET  /api/integration/status   /synapt-stats</text>
+  <rect x="56" y="656" width="276" height="96" rx="9" class="box"/>
+  <text x="68" y="676" font-size="13" class="t h">Beside the workflow</text>
+  <text x="68" y="694" font-size="11" class="m">Intake extractor: a model reads the notes;</text>
+  <text x="68" y="709" font-size="11" class="m">a value is kept only if quoted word for word</text>
+  <text x="68" y="727" font-size="11" class="m">Side chat: routed answers from Synapt or</text>
+  <text x="68" y="742" font-size="11" class="m">the saved run; never edits the brief</text>
+  <path d="M348 446 H372" class="line" marker-end="url(#arrow)"/>
 
   <!-- LangGraph workflow -->
-  <path d="M340 394 H372" class="line" marker-end="url(#arrow)"/>
-  <rect x="372" y="196" width="540" height="396" rx="14" class="panel"/>
-  <text x="390" y="224" font-size="16" class="t h">LangGraph investigation workflow</text>
-  <text x="390" y="243" font-size="12" class="m">checkpointed in SQLite; pauses for a human at the review gate</text>
+  <rect x="372" y="196" width="600" height="568" rx="14" class="panel"/>
+  <text x="390" y="224" font-size="16" class="t h">LangGraph investigation graph <tspan font-size="11" font-weight="400" class="m">(investigation/workflow.py)</tspan></text>
+  <text x="390" y="243" font-size="11" class="m">11 agent nodes: 7 here + 4 in the retrieve sub-graph · review is the human gate · checkpointed in SQLite</text>
 
-  <rect x="388" y="262" width="118" height="92" rx="10" class="node"/>
-  <text x="398" y="284" font-size="13" class="t h">1 Classify</text>
-  <text x="398" y="303" font-size="11" class="m">claim type agent;</text>
-  <text x="398" y="318" font-size="11" class="m">abstains when the</text>
-  <text x="398" y="333" font-size="11" class="m">category is unclear</text>
-  <rect x="528" y="262" width="118" height="92" rx="10" class="node"/>
-  <text x="538" y="284" font-size="13" class="t h">2 Retrieve</text>
-  <text x="538" y="303" font-size="11" class="m">filters + BM25 +</text>
-  <text x="538" y="318" font-size="11" class="m">features + Synapt</text>
-  <text x="538" y="333" font-size="11" class="m">semantic rank</text>
-  <rect x="668" y="262" width="118" height="92" rx="10" class="node"/>
-  <text x="678" y="284" font-size="13" class="t h">3 Investigate</text>
-  <text x="678" y="303" font-size="11" class="m">gaps, conflicts,</text>
-  <text x="678" y="318" font-size="11" class="m">comparisons, every</text>
-  <text x="678" y="333" font-size="11" class="m">finding cited</text>
-  <rect x="808" y="262" width="88" height="92" rx="10" class="node"/>
-  <text x="818" y="284" font-size="13" class="t h">4 Risk</text>
-  <text x="818" y="303" font-size="11" class="m">3 models,</text>
-  <text x="818" y="318" font-size="11" class="m">audited</text>
-  <text x="818" y="333" font-size="11" class="m">priority score</text>
-  <path d="M506 308 H528" class="line" marker-end="url(#arrow)"/>
-  <path d="M646 308 H668" class="line" marker-end="url(#arrow)"/>
-  <path d="M786 308 H808" class="line" marker-end="url(#arrow)"/>
+  <!-- Row A: classify, retrieve sub-graph -->
+  <rect x="388" y="258" width="120" height="174" rx="10" class="node"/>
+  <text x="398" y="280" font-size="13" class="t h">1 Classify</text>
+  <text x="398" y="297" font-size="10" class="a">Claim Triage Agent</text>
+  <text x="398" y="318" font-size="10.5" class="m">returns a claim type</text>
+  <text x="398" y="333" font-size="10.5" class="m">or abstains when</text>
+  <text x="398" y="348" font-size="10.5" class="m">the category is</text>
+  <text x="398" y="363" font-size="10.5" class="m">unclear</text>
+  <rect x="398" y="408" width="78" height="15" rx="7.5" class="tagL"/>
+  <text x="405" y="419" class="tg">language model</text>
+  <path d="M508 345 H530" class="line" marker-end="url(#arrow)"/>
 
-  <rect x="388" y="400" width="118" height="92" rx="10" class="node"/>
-  <text x="398" y="422" font-size="13" class="t h">5 Recommend</text>
-  <text x="398" y="441" font-size="11" class="m">bounded handler</text>
-  <text x="398" y="456" font-size="11" class="m">actions, each</text>
-  <text x="398" y="471" font-size="11" class="m">with sources</text>
-  <rect x="528" y="400" width="118" height="92" rx="10" class="node"/>
-  <text x="538" y="422" font-size="13" class="t h">6 Validate</text>
-  <text x="538" y="441" font-size="11" class="m">schema, citations,</text>
-  <text x="538" y="456" font-size="11" class="m">no coverage / fraud</text>
-  <text x="538" y="471" font-size="11" class="m">decisions</text>
-  <rect x="668" y="400" width="118" height="92" rx="10" class="node"/>
-  <text x="678" y="422" font-size="13" class="t h">7 Judge</text>
-  <text x="678" y="441" font-size="11" class="m">independent LLM</text>
-  <text x="678" y="456" font-size="11" class="m">scores grounding</text>
-  <text x="678" y="471" font-size="11" class="m">and boundaries</text>
-  <rect x="808" y="400" width="88" height="92" rx="10" class="gate"/>
-  <text x="818" y="422" font-size="13" class="t h">8 Review</text>
-  <text x="818" y="441" font-size="11" class="m">human gate:</text>
-  <text x="818" y="456" font-size="11" class="m">accept or</text>
-  <text x="818" y="471" font-size="11" class="m">revise</text>
-  <path d="M852 354 V378 H447 V400" class="line" marker-end="url(#arrow)"/>
-  <path d="M506 446 H528" class="line" marker-end="url(#arrow)"/>
-  <path d="M646 446 H668" class="line" marker-end="url(#arrow)"/>
-  <path d="M786 446 H808" class="line" marker-end="url(#arrow)"/>
-  <text x="390" y="528" font-size="12" class="m">Every finding and recommendation must cite a supplied source.</text>
-  <text x="390" y="548" font-size="12" class="m">Statistical estimates, queue priority and retrieval scores stay separate.</text>
-  <text x="390" y="568" font-size="12" class="m">Nothing here approves, denies or pays a claim; the handler decides.</text>
+  <rect x="530" y="258" width="426" height="174" rx="10" class="sub"/>
+  <text x="546" y="280" font-size="13" class="t h">2 Retrieve <tspan font-size="11" font-weight="400" class="m">· a sub-graph of its own (retrieval/graph.py)</tspan></text>
+  <text x="546" y="296" font-size="10.5" class="m">four agents start together; Synapt agents may add one model-guided search</text>
+  <rect x="546" y="304" width="192" height="42" rx="7" class="syn"/>
+  <text x="556" y="321" font-size="11" class="t h">Policy Passage Retriever</text>
+  <text x="556" y="337" font-size="9.5" class="m">get_chunks · search · procedures · tickets</text>
+  <rect x="750" y="304" width="192" height="42" rx="7" class="syn"/>
+  <text x="760" y="321" font-size="11" class="t h">Procedure Graph Navigator</text>
+  <text x="760" y="337" font-size="9.5" class="m">search · traverse the knowledge graph</text>
+  <rect x="546" y="354" width="192" height="42" rx="7" class="syn"/>
+  <text x="556" y="371" font-size="11" class="t h">Knowledge Q&amp;A Agent</text>
+  <text x="556" y="387" font-size="9.5" class="m">query · answer shown, never evidence</text>
+  <rect x="750" y="354" width="192" height="42" rx="7" class="data"/>
+  <text x="760" y="371" font-size="11" class="t h">Claims History Analyst</text>
+  <text x="760" y="387" font-size="9.5" class="m">DuckDB candidates + cohort figures</text>
+  <rect x="546" y="404" width="396" height="20" rx="6" class="box"/>
+  <text x="556" y="418" font-size="10" class="t"><tspan font-weight="700">assemble_evidence</tspan> → passages · procedures · the claim · past cases · lessons</text>
 
-  <!-- Knowledge and data -->
-  <rect x="948" y="196" width="292" height="396" rx="14" class="panel"/>
-  <text x="966" y="224" font-size="16" class="t h">Data, knowledge and models</text>
-  <rect x="964" y="238" width="260" height="84" rx="10" class="data"/>
-  <text x="976" y="260" font-size="13" class="t h">Parquet: 100,000,000 claims</text>
-  <text x="976" y="279" font-size="11.5" class="m">queried in place with DuckDB:</text>
-  <text x="976" y="295" font-size="11.5" class="m">filters, similar claims, training sample,</text>
-  <text x="976" y="311" font-size="11.5" class="m">open and settled statuses</text>
-  <rect x="964" y="332" width="260" height="96" rx="10" class="syn"/>
-  <text x="976" y="354" font-size="13" class="t h">Synapt provider (MCP)</text>
-  <text x="976" y="373" font-size="11.5" class="m">procedures (SOPs), 1,000 claim cards,</text>
-  <text x="976" y="389" font-size="11.5" class="m">reviewed handler lessons; semantic</text>
-  <text x="976" y="405" font-size="11.5" class="m">ranking by masking-safe claim aliases</text>
-  <rect x="964" y="438" width="260" height="66" rx="10" class="data"/>
-  <text x="976" y="460" font-size="13" class="t h">Models (scikit-learn)</text>
-  <text x="976" y="479" font-size="11.5" class="m">amount, resolution time, fraud flag,</text>
-  <text x="976" y="495" font-size="11.5" class="m">with direction-of-effect explanations</text>
-  <rect x="964" y="514" width="260" height="66" rx="10" class="llm"/>
-  <text x="976" y="536" font-size="13" class="t h">NVIDIA NIM</text>
-  <text x="976" y="555" font-size="11.5" class="m">Nemotron writes the brief;</text>
-  <text x="976" y="571" font-size="11.5" class="m">Gemma judges it independently</text>
-  <path d="M912 308 H948" class="line" marker-end="url(#arrow)"/>
-  <path d="M912 446 H948" class="line" marker-end="url(#arrow)"/>
+  <!-- Row B (right to left): investigate, risk, recommend, validate -->
+  <path d="M892 432 V458" class="line" marker-end="url(#arrow)"/>
+  <rect x="829" y="458" width="127" height="98" rx="10" class="node"/>
+  <text x="839" y="478" font-size="13" class="t h">3 Investigate</text>
+  <text x="839" y="494" font-size="10" class="a">Investigation Agent</text>
+  <text x="839" y="510" font-size="10.5" class="m">gaps, conflicts;</text>
+  <text x="839" y="524" font-size="10.5" class="m">every finding cited</text>
+  <rect x="839" y="534" width="78" height="15" rx="7.5" class="tagL"/>
+  <text x="846" y="545" class="tg">language model</text>
 
-  <!-- SQLite -->
-  <rect x="372" y="628" width="540" height="64" rx="12" class="box"/>
-  <text x="390" y="654" font-size="14" class="t h">SQLite (local, WAL)</text>
-  <text x="390" y="675" font-size="12" class="m">LangGraph checkpoints, audit log, users and sessions, handler feedback</text>
-  <path d="M642 592 V628" class="line" marker-end="url(#arrow)"/>
+  <rect x="682" y="458" width="127" height="98" rx="10" class="node"/>
+  <text x="692" y="478" font-size="13" class="t h">4 Risk</text>
+  <text x="692" y="494" font-size="10" class="a">Risk &amp; Priority Analyst</text>
+  <text x="692" y="510" font-size="10.5" class="m">3 estimates, audited</text>
+  <text x="692" y="524" font-size="10.5" class="m">0–100 priority</text>
+  <rect x="692" y="534" width="80" height="15" rx="7.5" class="tagD"/>
+  <text x="699" y="545" class="tg">models + rules</text>
 
-  <!-- Feedback loop -->
-  <rect x="40" y="728" width="1200" height="96" rx="14" class="loop"/>
-  <text x="60" y="756" font-size="15" class="t h">Feedback loop (closed)</text>
-  <text x="60" y="780" font-size="13" class="m">Handler rates an accepted brief  →  administrator promotes the reviewed lesson  →  stored as a handler_lesson, and ingested into Synapt in live mode</text>
-  <text x="60" y="802" font-size="13" class="m">→  retrieved as cited evidence in later investigations of the same claim type. Nothing is promoted automatically; lessons never decide a claim.</text>
-  <path d="M930 728 V392 H964" class="loopline" marker-end="url(#arrowTeal)"/>
-  <text x="936" y="716" font-size="11" fill="#0f766e">promote</text>
+  <rect x="535" y="458" width="127" height="98" rx="10" class="node"/>
+  <text x="545" y="478" font-size="13" class="t h">5 Recommend</text>
+  <text x="545" y="494" font-size="10" class="a">Recommendation Agent</text>
+  <text x="545" y="510" font-size="10.5" class="m">closed list of actions,</text>
+  <text x="545" y="524" font-size="10.5" class="m">each with sources</text>
+  <rect x="545" y="534" width="78" height="15" rx="7.5" class="tagL"/>
+  <text x="552" y="545" class="tg">language model</text>
+
+  <rect x="388" y="458" width="127" height="98" rx="10" class="node"/>
+  <text x="398" y="478" font-size="13" class="t h">6 Validate</text>
+  <text x="398" y="494" font-size="10" class="a">Brief Validator</text>
+  <text x="398" y="510" font-size="10.5" class="m">schema, citations, no</text>
+  <text x="398" y="524" font-size="10.5" class="m">coverage / decisions</text>
+  <rect x="398" y="534" width="62" height="15" rx="7.5" class="tagR"/>
+  <text x="405" y="545" class="tg">fixed rules</text>
+
+  <path d="M829 507 H809" class="line" marker-end="url(#arrow)"/>
+  <path d="M682 507 H662" class="line" marker-end="url(#arrow)"/>
+  <path d="M535 507 H515" class="line" marker-end="url(#arrow)"/>
+
+  <!-- Row C: supervise sub-graph, judge, review -->
+  <path d="M451 556 V584" class="line" marker-end="url(#arrow)"/>
+  <rect x="388" y="584" width="252" height="108" rx="10" class="sub"/>
+  <text x="398" y="604" font-size="13" class="t h">7 Supervise <tspan font-size="10.5" font-weight="400" class="m">· sub-graph (agents/supervisor.py)</tspan></text>
+  <text x="398" y="620" font-size="10" class="a">Supervisor Agent</text>
+  <rect x="400" y="627" width="64" height="20" rx="6" class="box"/>
+  <text x="414" y="641" font-size="10.5" class="t">revise</text>
+  <rect x="500" y="627" width="64" height="20" rx="6" class="box"/>
+  <text x="513" y="641" font-size="10.5" class="t">review</text>
+  <path d="M464 632 H500" class="thin" marker-end="url(#arrowSmall)"/>
+  <path d="M500 642 H464" class="thin" marker-end="url(#arrowSmall)"/>
+  <path d="M564 637 H590" class="thin" marker-end="url(#arrowSmall)"/>
+  <text x="594" y="641" font-size="10.5" class="m">end</text>
+  <text x="398" y="662" font-size="10.5" class="m">handler summary; at most one repair (redoes 3–6)</text>
+  <rect x="398" y="670" width="78" height="15" rx="7.5" class="tagL"/>
+  <text x="405" y="681" class="tg">language model</text>
+
+  <rect x="660" y="584" width="140" height="108" rx="10" class="node"/>
+  <text x="670" y="604" font-size="13" class="t h">8 Judge</text>
+  <text x="670" y="620" font-size="10" class="a">Independent Judge</text>
+  <text x="670" y="636" font-size="10.5" class="m">a different model, in</text>
+  <text x="670" y="650" font-size="10.5" class="m">the background;</text>
+  <text x="670" y="664" font-size="10.5" class="m">advisory only</text>
+  <rect x="670" y="670" width="84" height="15" rx="7.5" class="tagL"/>
+  <text x="677" y="681" class="tg">different model</text>
+
+  <rect x="820" y="584" width="136" height="108" rx="10" class="gate"/>
+  <text x="830" y="604" font-size="13" class="t h">9 Review</text>
+  <text x="830" y="620" font-size="10" class="a" fill="#b45309" style="fill:#b45309">LangGraph interrupt</text>
+  <text x="830" y="636" font-size="10.5" class="m">handler accepts or</text>
+  <text x="830" y="650" font-size="10.5" class="m">asks for revision;</text>
+  <text x="830" y="664" font-size="10.5" class="m">blocked if checks fail</text>
+  <rect x="830" y="670" width="44" height="15" rx="7.5" class="tagP"/>
+  <text x="837" y="681" class="tg">person</text>
+
+  <path d="M640 638 H660" class="line" marker-end="url(#arrow)"/>
+  <path d="M800 638 H820" class="line" marker-end="url(#arrow)"/>
+
+  <text x="390" y="724" font-size="11" class="m">Every finding and recommendation cites a supplied source.</text>
+  <text x="390" y="740" font-size="11" class="m">Agents hold only their roster tools, checked on every call; none can write to Synapt.</text>
+  <text x="390" y="756" font-size="11" class="m">Nothing here approves, denies or pays a claim; the handler decides.</text>
+
+  <!-- Knowledge, data and models -->
+  <rect x="996" y="196" width="364" height="568" rx="14" class="panel"/>
+  <text x="1014" y="224" font-size="16" class="t h">Knowledge, data and models</text>
+
+  <rect x="1012" y="238" width="332" height="140" rx="10" class="syn"/>
+  <text x="1024" y="260" font-size="13" class="t h">Synapt knowledge base <tspan font-size="11" font-weight="400" class="m">(MCP, synapt/adapter.py)</tspan></text>
+  <text x="1024" y="278" font-size="11" class="m">provider synapt_capstone1 · required, live only</text>
+  <text x="1024" y="296" font-size="11" class="m">17 handling procedures (SOPs) + its knowledge graph</text>
+  <text x="1024" y="312" font-size="11" class="m">ticket store: 2,000 settled past claims (similar claims)</text>
+  <text x="1024" y="328" font-size="11" class="m">promoted handler lessons</text>
+  <text x="1024" y="348" font-size="10.5" class="m">reads: get_chunks, search, get_procedures, traverse, query, tickets</text>
+  <text x="1024" y="364" font-size="10.5" class="m">writes: ingest (ingestion job), feedback (human reviewer)</text>
+
+
+  <rect x="1012" y="458" width="332" height="86" rx="10" class="data"/>
+  <text x="1024" y="480" font-size="13" class="t h">Past claims: 100,000,000 rows <tspan font-size="11" font-weight="400" class="m">(DuckDB)</tspan></text>
+  <text x="1024" y="498" font-size="11" class="m">Parquet file, authoritative for every number shown</text>
+  <text x="1024" y="514" font-size="11" class="m">sorted native copy for the 300-candidate search</text>
+  <text x="1024" y="530" font-size="11" class="m">cohort summary tables for exact settled figures</text>
+
+  <rect x="1012" y="554" width="332" height="66" rx="10" class="data"/>
+  <text x="1024" y="576" font-size="13" class="t h">Models <tspan font-size="11" font-weight="400" class="m">(scikit-learn, ml/)</tspan></text>
+  <text x="1024" y="594" font-size="11" class="m">amount, resolution time, fraud flag,</text>
+  <text x="1024" y="610" font-size="11" class="m">with direction-of-effect explanations</text>
+
+  <rect x="1012" y="630" width="332" height="118" rx="10" class="llm"/>
+  <text x="1024" y="652" font-size="13" class="t h">Language models <tspan font-size="11" font-weight="400" class="m">(llm/client.py, rate-limited)</tspan></text>
+  <text x="1024" y="670" font-size="11" class="m">NVIDIA NIM · Nemotron 3 Super 120B writes:</text>
+  <text x="1024" y="686" font-size="11" class="m">triage, findings, actions, supervisor summary,</text>
+  <text x="1024" y="702" font-size="11" class="m">intake reading, retrieval follow-up searches</text>
+  <text x="1024" y="720" font-size="11" class="m">gpt-oss-20b judges independently</text>
+  <text x="1024" y="736" font-size="11" class="m">Anthropic Claude available as a provider setting</text>
+
+  <!-- Workflow to stores -->
+  <path d="M956 320 H1012" class="line" marker-end="url(#arrow)"/>
+  <path d="M956 380 H984 V500 H1012" class="line" marker-end="url(#arrow)"/>
+  <path d="M745 556 V570 H984 V587 H1012" class="line" marker-end="url(#arrow)"/>
+  <path d="M730 692 V704 H984 V690 H1012" class="line" marker-end="url(#arrow)"/>
+
+  <!-- Persistence, observability, evaluation -->
+  <rect x="40" y="788" width="308" height="72" rx="12" class="box"/>
+  <text x="56" y="810" font-size="13" class="t h">Observability <tspan font-size="11" font-weight="400" class="m">(observability/)</tspan></text>
+  <text x="56" y="828" font-size="11" class="m">spans for every stage, tool and model call;</text>
+  <text x="56" y="844" font-size="11" class="m">live progress, previews, traces, explanations</text>
+  <path d="M348 824 H372" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="372" y="788" width="600" height="72" rx="12" class="box"/>
+  <text x="390" y="810" font-size="13" class="t h">SQLite (WAL) <tspan font-size="11" font-weight="400" class="m">(storage/run_store.py, api/auth.py)</tspan></text>
+  <text x="390" y="828" font-size="11" class="m">investigations, audit, feedback, spans, api_requests, side_questions, query_feedback</text>
+  <text x="390" y="844" font-size="11" class="m">users and sessions · LangGraph checkpoints on a separate connection</text>
+  <path d="M672 764 V788" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="996" y="788" width="364" height="72" rx="12" class="box"/>
+  <text x="1012" y="810" font-size="13" class="t h">Evaluation <tspan font-size="11" font-weight="400" class="m">(evaluation/)</tspan></text>
+  <text x="1012" y="828" font-size="11" class="m">golden cases and DeepEval; judge verdicts</text>
+  <text x="1012" y="844" font-size="11" class="m">shown on the Quality &amp; models page</text>
+
+  <!-- Feedback loops -->
+  <rect x="40" y="884" width="1320" height="108" rx="14" class="loop"/>
+  <text x="60" y="910" font-size="14" class="t h">Feedback loops (a person decides each step)</text>
+  <text x="60" y="934" font-size="12.5" class="m"><tspan class="t h">Lessons:</tspan>  handler accepts and rates a brief  →  administrator promotes the reviewed lesson (no claim identifiers)  →  ingested into Synapt (trident_ingest)</text>
+  <text x="60" y="954" font-size="12.5" class="m">→  retrieved as cited handler_lesson evidence in later investigations of the same claim type. Nothing is promoted automatically; a lesson never decides a claim.</text>
+  <text x="60" y="976" font-size="12.5" class="m"><tspan class="t h">Answers:</tspan>  the handler rates the knowledge base's answer as helpful, partly helpful or not  →  sent to Synapt as trident_feedback (no agent can send feedback).</text>
+  <path d="M1380 884 V312 H1344" class="loopline" marker-end="url(#arrowTeal)"/>
+  <text x="1394" y="600" font-size="11" fill="#0f766e" text-anchor="middle" transform="rotate(-90 1394 600)">ingest lesson · send feedback</text>
 </svg>

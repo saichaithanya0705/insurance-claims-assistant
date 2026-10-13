@@ -12,11 +12,11 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
-from claims.demo import DEMO_CASES
-from claims.evaluation import EvaluationService
-from claims.judge import LLMJudge
-from claims.settings import Settings
-from claims.store import Store
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.settings import Settings
+from claims.evaluation.judge import LLMJudge
+from claims.evaluation.service import EvaluationService
+from claims.storage.run_store import Store
 
 
 def main():

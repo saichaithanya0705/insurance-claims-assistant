@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claim Sentence Intake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+/* Same tokens as frontend/src/index.css so the concept drops into the app's look. */
+:root {
+  --bg: #f3f1ec; --bg-2: #f8f7f3; --surface: #ffffff; --surface-solid: #f1eee7; --surface-hover: #f2efe8; --track: #e9e5dc;
+  --border: #e3ddd2; --hairline: #ece7de; --border-strong: #8f8679;
+  --text: #1b221f; --text-2: #464e49; --text-3: #676760;
+  --teal: #1d5a4b; --teal-hover: #154536; --teal-dim: #e7f1ec; --teal-border: #a7c8ba; --teal-glow: rgb(29 90 75 / 0.14);
+  --sky: #2f5a76; --sky-dim: #e9f1f7; --sky-border: #b0c8da;
+  --amber: #7a4a0e; --amber-dim: #fdf3df; --amber-border: #dfc896;
+  --rose: #8f3434; --rose-dim: #fbedea; --rose-border: #e0b7af;
+  --radius-sm: 6px; --radius: 10px; --radius-lg: 16px;
+  --shadow-xs: 0 1px 2px rgb(38 34 26 / 0.06);
+  --shadow: 0 1px 2px rgb(38 34 26 / 0.05), 0 6px 20px -8px rgb(38 34 26 / 0.12);
+  --shadow-lg: 0 2px 6px rgb(38 34 26 / 0.06), 0 24px 48px -18px rgb(24 58 48 / 0.24);
+  --ring: 0 0 0 3px var(--teal-glow);
+  --font-sans: 'Geist', 'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-sans); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+code { font-family: var(--font-mono); font-size: 0.9em; }
+
+.concept-bar { background: var(--text); color: #e9e5dc; font-size: 12.5px; padding: 8px 16px; text-align: center; }
+.concept-bar code { background: rgb(255 255 255 / 0.12); color: #fff; padding: 1px 5px; border-radius: 4px; }
+
+.page { max-width: 1120px; margin: 0 auto; padding: 44px 24px 80px; }
+.head { max-width: 760px; margin-bottom: 26px; }
+.eyebrow { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal); }
+h1 { margin: 0; font: 500 38px/1.15 var(--font-serif); letter-spacing: -0.01em; }
+.lede { margin: 10px 0 0; color: var(--text-2); font-size: 15px; max-width: 620px; }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 32px; align-items: start; }
+
+/* ---------- The sheet ---------- */
+.sheet { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.sheet section { padding: 30px 44px; }
+.kicker { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 10px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.kicker .counter { font-family: var(--font-mono); font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+.story { position: relative; }
+.story::before { content: ""; position: absolute; left: 0; top: 30px; bottom: 30px; width: 3px; border-radius: 0 3px 3px 0; background: var(--teal); transform: scaleY(0); transform-origin: top; transition: transform 0.4s var(--ease); }
+.story:focus-within::before { transform: scaleY(1); }
+#story { display: block; width: 100%; min-height: 128px; resize: none; border: 0; outline: none; padding: 0; background: transparent; font: 400 19px/1.65 var(--font-serif); caret-color: var(--teal); overflow: hidden; }
+#story::placeholder { color: #9a958b; font-style: italic; }
+.reader { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-top: 10px; font-size: 12.5px; color: var(--text-3); }
+.reader:empty { display: none; }
+.reader .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); flex: none; }
+.reader.busy .dot { animation: pulse 1s ease-in-out infinite; }
+.reader.busy span { background: linear-gradient(90deg, var(--text-3) 30%, var(--teal) 50%, var(--text-3) 70%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 1.4s linear infinite; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.reader code { background: var(--surface-solid); padding: 1px 5px; border-radius: 4px; color: var(--text-2); }
+.examples { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 14px; font-size: 13px; color: var(--text-3); }
+.ex { border: 1px solid var(--border); background: var(--bg-2); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; color: var(--text-2); transition: background 0.15s, border-color 0.15s; }
+.ex:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.linkish { border: 0; background: none; padding: 0; color: var(--text-3); text-decoration: underline; text-underline-offset: 3px; font-size: 12.5px; }
+.linkish:hover { color: var(--text); }
+
+.summary { background: linear-gradient(var(--bg-2), var(--surface) 70%); border-top: 1px solid var(--hairline); }
+.sentence { margin: 0; font: 400 23px/2.05 var(--font-serif); color: var(--text); text-wrap: pretty; }
+
+/* Tokens: the blanks inside the sentence */
+.tok { display: inline; border: 0; margin: 0; padding: 0 3px; background: transparent; font: inherit; line-height: inherit; color: var(--text); border-bottom: 2px solid var(--teal); border-radius: 4px 4px 0 0; transition: background 0.15s, color 0.15s, border-color 0.15s; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.tok:hover, .tok.active { background: var(--teal-dim); }
+.tok.read { border-bottom-color: var(--sky); background: linear-gradient(transparent 62%, var(--sky-dim) 62%); }
+.tok.read:hover, .tok.read.active { background: var(--sky-dim); }
+.tok.empty { color: #8c877d; font-style: italic; border-bottom: 2px dashed var(--border-strong); }
+.tok.empty:hover, .tok.empty.active { color: var(--text-2); background: var(--surface-solid); }
+.tok.opt { color: var(--text-2); border-bottom: 2px dotted var(--border-strong); }
+.tok.next { animation: beckon 2.4s ease-in-out infinite; }
+@keyframes beckon { 0%, 100% { border-bottom-color: var(--border-strong); } 50% { border-bottom-color: var(--teal); background: var(--teal-dim); } }
+.tok.flash { animation: flash 1.1s var(--ease); }
+@keyframes flash { 0% { background: #cfe3f2; } 100% { background: linear-gradient(transparent 62%, var(--sky-dim) 62%); } }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 16px; font-size: 12px; color: var(--text-3); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { display: inline-block; width: 22px; height: 0; border-bottom: 2px solid; }
+.legend .l-read { border-color: var(--sky); }
+.legend .l-you { border-color: var(--teal); }
+.legend .l-need { border-bottom-style: dashed; border-color: var(--border-strong); }
+.legend .l-opt { border-bottom-style: dotted; border-color: var(--border-strong); }
+
+/* Compare */
+.compare { border-top: 1px solid var(--hairline); padding-top: 22px !important; padding-bottom: 24px !important; }
+.match { display: flex; flex-wrap: wrap; gap: 8px; }
+.mchip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 13px; font-size: 13px; font-weight: 500; color: var(--text-2); transition: all 0.15s; }
+.mchip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--border-strong); transition: all 0.15s; }
+.mchip:hover:not(:disabled) { border-color: var(--border-strong); }
+.mchip[aria-pressed="true"] { background: var(--teal-dim); border-color: var(--teal-border); color: var(--teal); }
+.mchip[aria-pressed="true"]::before { background: var(--teal); border-color: var(--teal); }
+.mchip:disabled { opacity: 0.45; cursor: not-allowed; }
+.outcome { display: inline-flex; flex-wrap: wrap; background: var(--track); border-radius: 999px; padding: 3px; gap: 2px; margin-left: 4px; }
+.outcome button { border: 0; background: transparent; border-radius: 999px; padding: 4px 11px; font-size: 12.5px; color: var(--text-2); }
+.outcome button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-xs); font-weight: 500; }
+.compare-caption { margin: 12px 0 0; font: italic 15px/1.5 var(--font-serif); color: var(--text-2); }
+
+/* Footer */
+.send { display: flex; align-items: center; gap: 16px; padding: 18px 44px; border-top: 1px solid var(--hairline); background: var(--bg-2); flex-wrap: wrap; }
+.progress { display: flex; gap: 4px; }
+.progress i { width: 16px; height: 4px; border-radius: 2px; background: var(--track); transition: background 0.3s; }
+.progress i.on { background: var(--teal); }
+.status { flex: 1; min-width: 200px; font-size: 13px; color: var(--text-2); }
+.status strong { color: var(--text); font-weight: 600; }
+.status button { border: 0; background: none; padding: 0; color: var(--teal); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.primary { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--teal); background: var(--teal); color: #fff; border-radius: var(--radius); padding: 10px 18px; font-weight: 600; font-size: 14px; box-shadow: 0 6px 16px -8px rgb(29 90 75 / 0.6); transition: background 0.15s, transform 0.15s, opacity 0.15s; }
+.primary:hover { background: var(--teal-hover); }
+.primary:active { transform: translateY(1px); }
+.primary.waiting { opacity: 0.55; box-shadow: none; }
+.primary svg { transition: transform 0.2s var(--ease); }
+.primary:hover svg { transform: translateX(3px); }
+
+/* Margin notes */
+.margin { position: sticky; top: 24px; }
+.margin h2 { margin: 6px 0 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.note { position: relative; padding: 2px 0 2px 14px; margin-bottom: 18px; animation: noteIn 0.4s var(--ease) both; }
+.note::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; border-radius: 2px; background: var(--border-strong); }
+.note.sky::before { background: var(--sky); } .note.amber::before { background: #c08a2e; } .note.rose::before { background: var(--rose); } .note.teal::before { background: var(--teal); }
+.note b { display: block; font-size: 13.5px; font-weight: 600; }
+.note.rose b { color: var(--rose); } .note.amber b { color: var(--amber); }
+.note span { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 1px; }
+.note.empty { color: var(--text-3); font: italic 14px/1.5 var(--font-serif); }
+.note.empty::before { background: var(--hairline); }
+@keyframes noteIn { from { opacity: 0; transform: translateX(-6px); } }
+.escape { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-3); }
+
+/* ---------- Popover ---------- */
+.pop { position: absolute; z-index: 50; width: 330px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 14px; animation: popIn 0.18s var(--ease); }
+.pop[hidden] { display: none; }
+@keyframes popIn { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+.pop.sheetmode { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; border-radius: 16px 16px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); animation: sheetIn 0.25s var(--ease); }
+@keyframes sheetIn { from { transform: translateY(30px); opacity: 0; } }
+.pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.pop-title { font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); flex: 1; }
+.pill { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; }
+.pill.sky { background: var(--sky-dim); color: var(--sky); border: 1px solid var(--sky-border); }
+.x { border: 0; background: none; width: 26px; height: 26px; border-radius: 6px; color: var(--text-3); font-size: 18px; line-height: 1; }
+.x:hover { background: var(--surface-solid); color: var(--text); }
+.quote { margin: 0 0 12px; padding: 8px 10px; border-left: 2px solid var(--sky); background: var(--sky-dim); border-radius: 0 6px 6px 0; font: italic 13.5px/1.45 var(--font-serif); color: var(--text-2); }
+.pin { width: 100%; height: 38px; border: 1px solid var(--border); border-radius: 8px; padding: 0 11px; background: var(--surface); outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
+.pin:focus { border-color: var(--teal-border); box-shadow: var(--ring); }
+.affix { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; transition: border-color 0.15s, box-shadow 0.15s; }
+.affix:focus-within { border-color: var(--teal-border); box-shadow: var(--ring); }
+.affix span { padding-left: 11px; color: var(--text-3); }
+.affix .pin { border: 0; box-shadow: none; padding-left: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chips:first-child { margin-top: 0; }
+.chip { border: 1px solid var(--border); background: var(--bg-2); border-radius: 999px; padding: 5px 11px; font-size: 13px; color: var(--text-2); transition: all 0.12s; }
+.chip:hover { border-color: var(--border-strong); color: var(--text); }
+.chip.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+.opts { list-style: none; margin: 8px 0 0; padding: 0; max-height: 220px; overflow: auto; }
+.opts button { display: flex; justify-content: space-between; width: 100%; border: 0; background: none; text-align: left; padding: 7px 9px; border-radius: 6px; font-size: 13.5px; }
+.opts button:hover, .opts li:first-child button { background: var(--surface-solid); }
+.opts small { font-family: var(--font-mono); color: var(--text-3); }
+.stepper { display: flex; gap: 6px; }
+.stepper button { width: 38px; height: 38px; flex: none; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2); font-size: 18px; }
+.stepper button:hover { border-color: var(--border-strong); }
+.stepper .pin { text-align: center; font-variant-numeric: tabular-nums; }
+.pop-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.perr { flex: 1; font-size: 12.5px; color: var(--rose); }
+.done { border: 1px solid var(--teal); background: var(--teal); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+.done kbd { font-family: var(--font-mono); font-size: 11px; opacity: 0.75; }
+.hint { margin: 10px 0 0; font-size: 12px; color: var(--text-3); }
+
+/* Dialog + toast */
+dialog { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0; width: min(620px, calc(100vw - 32px)); box-shadow: var(--shadow-lg); color: var(--text); }
+dialog::backdrop { background: rgb(27 34 31 / 0.35); backdrop-filter: blur(2px); }
+.dlg-body { padding: 22px 24px; }
+.dlg-body h2 { margin: 0 0 4px; font: 500 22px/1.3 var(--font-serif); }
+.dlg-body p { margin: 0 0 14px; color: var(--text-2); font-size: 13.5px; }
+.dlg-body pre { margin: 0; max-height: 50vh; overflow: auto; background: var(--bg-2); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 14px; font: 12.5px/1.55 var(--font-mono); }
+.dlg-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--hairline); background: var(--bg-2); }
+.ghost { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 9px 14px; font-weight: 500; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; background: var(--text); color: #f1eee7; padding: 10px 16px; border-radius: 10px; font-size: 13px; pointer-events: none; transition: all 0.3s var(--ease); z-index: 100; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 1fr; }
+  .margin { position: static; }
+}
+@media (max-width: 640px) {
+  .page { padding: 28px 16px 64px; }
+  h1 { font-size: 30px; }
+  .sheet section { padding: 22px 18px; }
+  .send { padding: 16px 18px; }
+  .sentence { font-size: 19.5px; line-height: 2.1; }
+  #story { font-size: 17.5px; }
+  .primary { width: 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="concept-bar">Concept prototype: sentence intake. Not wired to the app. It produces the same <code>ClaimInput</code> and filters that <code>/api/investigations</code> already takes. The model pass is simulated here.</div>
+
+<main class="page">
+  <header class="head">
+    <p class="eyebrow">New investigation</p>
+    <h1>Tell us about the claim.</h1>
+    <p class="lede">Write it the way you'd brief a colleague. Whatever we can read from your words fills into the sentence below. Click any underlined phrase to check or change it.</p>
+  </header>
+
+  <div class="layout">
+    <article class="sheet">
+      <section class="story">
+        <label class="kicker" for="story">What happened <span class="counter" id="count">0 / 6000</span></label>
+        <textarea id="story" maxlength="6000" rows="4" spellcheck="true" placeholder="Rear-ended at a red light in Austin, TX on March 3. Repair estimate came to $12,400, $500 deductible…"></textarea>
+        <div class="reader" id="reader" aria-live="polite"></div>
+        <div class="examples">
+          <span>Or start from an example:</span>
+          <button type="button" class="ex" data-ex="0">Rear-end collision</button>
+          <button type="button" class="ex" data-ex="1">Car stolen from driveway</button>
+          <button type="button" class="ex" data-ex="2">Burst kitchen pipe</button>
+          <button type="button" class="linkish" id="clear">Clear</button>
+        </div>
+      </section>
+
+      <section class="summary" aria-labelledby="sumH">
+        <p class="kicker" id="sumH">The claim, in one sentence</p>
+        <p class="sentence" id="sentence"></p>
+        <div class="legend" aria-hidden="true">
+          <span><i class="l-read"></i>read from your notes</span>
+          <span><i class="l-you"></i>set by you</span>
+          <span><i class="l-need"></i>still needed</span>
+          <span><i class="l-opt"></i>optional</span>
+        </div>
+      </section>
+
+      <section class="compare" aria-labelledby="cmpH">
+        <p class="kicker" id="cmpH">Compare it against</p>
+        <div class="match" id="match" role="group" aria-labelledby="cmpH"></div>
+        <p class="compare-caption" id="cmpCaption"></p>
+      </section>
+
+      <footer class="send">
+        <div class="progress" id="progress" aria-hidden="true"></div>
+        <div class="status" id="status" aria-live="polite"></div>
+        <button type="button" class="linkish" id="peek">What gets sent</button>
+        <button type="button" class="primary" id="go">Investigate
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </footer>
+    </article>
+
+    <aside class="margin" aria-labelledby="mH">
+      <h2 id="mH">In the margin</h2>
+      <div id="notes" aria-live="polite"></div>
+      <div class="escape">Prefer separate boxes? <button type="button" class="linkish" id="classic">Use the full form</button></div>
+    </aside>
+  </div>
+</main>
+
+<div class="pop" id="pop" role="dialog" hidden></div>
+
+<dialog id="dlg" aria-labelledby="dlgH">
+  <div class="dlg-body">
+    <h2 id="dlgH">Ready to investigate</h2>
+    <p>This is exactly what goes to <code>POST /api/investigations</code>. Nothing is sent until you start.</p>
+    <pre id="json"></pre>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="ghost" id="dlgBack">Back to editing</button>
+    <button type="button" class="primary" id="dlgGo">Start investigation</button>
+  </div>
+</dialog>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $ = (s) => document.querySelector(s)
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+const STATES = [['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','District of Columbia'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming']]
+const stateName = (code) => (STATES.find(([c]) => c === code) || [, ''])[1]
+const TYPES = [['', 'Auto-detect'], ['auto', 'Auto'], ['home', 'Home'], ['renters', 'Renters'], ['property', 'Property'], ['business', 'Business']]
+const TYPE_TEXT = { '': 'A claim', auto: 'An auto claim', home: 'A home claim', renters: 'A renters claim', property: 'A property claim', business: 'A business claim' }
+const DOCS = ['incident statement', 'police report', 'repair estimate', 'photos', 'invoice', 'medical report', 'inspection report']
+
+const EXAMPLES = [
+  'Rear-ended at a red light on I-35 in Austin, TX on March 3, 2026. Other driver admitted fault at the scene. Repair estimate from Northside Collision came to $12,400; the policy has a $500 deductible. Reported to us on March 7. Customer for 6 years, 1 prior claim. She sent photos, the police report and the repair estimate.',
+  'Insured says his 2021 Honda Civic was stolen from his driveway overnight in Phoenix, Arizona on 2026-08-14. Reported 2026-09-20. Claiming $24,000 with a $1,000 deductible. Policyholder for 8 months, 3 previous claims. Has photos of the driveway but no police report yet.',
+  'Pipe burst under the kitchen sink while the family was away, flooding the kitchen and part of the basement. House in Columbus, Ohio. Happened 9/28/2026, called in 9/29/2026. Contractor invoice for $8,750; $1,000 deductible. With us for 12 years, no prior claims. Sent photos, an invoice and an inspection report.',
+]
+
+// ---------- dates ----------
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const TODAY = iso(new Date())
+const parseIso = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d) }
+const addDays = (s, n) => { const d = parseIso(s); d.setDate(d.getDate() + n); return iso(d) }
+const daysBetween = (a, b) => Math.round((parseIso(b) - parseIso(a)) / 864e5)
+const fmtDate = (s) => parseIso(s).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+const fmtMoney = (v) => '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })
+const mkDate = (y, m, d) => { const dt = new Date(y, m - 1, d); return dt.getMonth() === m - 1 && dt.getDate() === d ? iso(dt) : null }
+
+// ---------- the claim being built (same shape as FormState in IntakeForm.tsx) ----------
+const EMPTY = () => ({ description: '', claim_type: '', state: '', incident_date: '', claim_filed_date: '', claim_amount: '', deductible: '', previous_claims_count: '', policyholder_tenure_years: '', provided_documents: [] })
+let claim = EMPTY()
+let prov = {}            // field -> { src: 'notes' | 'you', snip }
+let signals = { theft: false, missingDocs: [] }
+const match = { type: false, state: false, amount: false, history: false, status: '' }
+
+const FIELDS = {
+  claim_type: { label: 'Claim type', optional: true },
+  state: { label: 'State', ph: 'which state' },
+  claim_amount: { label: 'Claim amount', ph: 'how much' },
+  deductible: { label: 'Deductible', ph: '$ —' },
+  incident_date: { label: 'Incident date', ph: 'which day' },
+  claim_filed_date: { label: 'Filing date', ph: 'when' },
+  policyholder_tenure_years: { label: 'Policyholder tenure', ph: 'how long' },
+  previous_claims_count: { label: 'Earlier claims', ph: 'how many earlier claims' },
+  provided_documents: { label: 'Documents received', optional: true },
+}
+const ORDER = Object.keys(FIELDS)
+const REQUIRED = ORDER.filter((f) => !FIELDS[f].optional)
+const isEmpty = (f) => (f === 'provided_documents' ? claim[f].length === 0 : claim[f] === '')
+
+// ---------- reading the notes ----------
+// Deterministic and local: the same words always give the same values, and nothing the
+// handler set by hand is ever overwritten.
+const WORDNUM = { no: 0, zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 }
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+const TYPE_WORDS = {
+  auto: /\b(car|cars|vehicle|truck|sedan|suv|driver|driving|collision|rear-ended|rear ended|windshield|bumper|honda|toyota|ford|tesla|motorcycle|fender)\b/gi,
+  home: /\b(house|home|roof|basement|kitchen|pipe|burst|flood|flooded|flooding|homeowner|attic|bathroom)\b/gi,
+  renters: /\b(apartment|renter|renters|tenant|landlord|lease)\b/gi,
+  property: /\b(fence|shed|barn|outbuilding|rental property|vacant lot)\b/gi,
+  business: /\b(business|store|shop|office|restaurant|inventory|warehouse|employee|commercial|storefront)\b/gi,
+}
+const DOC_WORDS = [
+  ['police report', /\bpolice report\b/gi],
+  ['photos', /\b(photos?|pictures?)\b/gi],
+  ['repair estimate', /\b(?:repair |body shop |contractor )?estimate\b/gi],
+  ['invoice', /\binvoices?\b/gi],
+  ['medical report', /\bmedical (?:report|records?)\b/gi],
+  ['inspection report', /\binspection report\b/gi],
+  ['incident statement', /\b(?:incident|written|signed) statement\b/gi],
+]
+const NEGATED = /\b(no|without|missing|not|hasn't|hasnt|haven't|lacks?|waiting (?:on|for))\b[^.;]*$/i
+const FILED_CTX = /\b(report\w*|filed|files?|submit\w*|called|notif\w*|lodged|contacted|phoned|opened)\b[^.;]*$/i
+
+function snip(t, i, j) {
+  const a = Math.max(0, i - 30), b = Math.min(t.length, j + 30)
+  return (a > 0 ? '…' : '') + t.slice(a, b).replace(/\s+/g, ' ').trim() + (b < t.length ? '…' : '')
+}
+
+function readNotes(t) {
+  const out = {}
+  const put = (f, value, i, j) => { if (!(f in out)) out[f] = { value, snip: snip(t, i, j) } }
+
+  // money: the figure closest to the word "deductible" is the deductible; the largest other is the claim
+  const money = []
+  for (const m of t.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(\s?k\b)?/gi)) {
+    let v = Number(m[1].replace(/,/g, '') + (m[2] ? '.' + m[2] : ''))
+    if (m[3]) v *= 1000
+    money.push({ v, i: m.index, j: m.index + m[0].length })
+  }
+  let ded = null, best = 41
+  for (const w of t.matchAll(/deductible/gi))
+    for (const mm of money) {
+      const d = mm.j <= w.index ? w.index - mm.j : mm.i >= w.index + 10 ? mm.i - w.index - 10 : 0
+      if (d < best) { best = d; ded = mm }
+    }
+  if (ded) put('deductible', ded.v, ded.i, ded.j)
+  const rest = money.filter((m) => m !== ded)
+  if (rest.length) { const c = rest.reduce((a, b) => (b.v > a.v ? b : a)); put('claim_amount', c.v, c.i, c.j) }
+
+  // dates
+  const dates = []
+  const addDate = (v, m) => { if (v && v <= TODAY) dates.push({ v, i: m.index, j: m.index + m[0].length }) }
+  for (const m of t.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) addDate(mkDate(+m[1], +m[2], +m[3]), m)
+  for (const m of t.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/g)) addDate(mkDate(+m[3] < 100 ? +m[3] + 2000 : +m[3], +m[1], +m[2]), m)
+  for (const m of t.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/gi)) {
+    const mo = MONTHS.indexOf(m[1].toLowerCase()) + 1
+    const y = m[3] ? +m[3] : new Date().getFullYear()
+    let v = mkDate(y, mo, +m[2])
+    if (v && !m[3] && v > TODAY) v = mkDate(y - 1, mo, +m[2])
+    addDate(v, m)
+  }
+  for (const m of t.matchAll(/\b(today|this morning|yesterday|last night)\b/gi)) addDate(/today|morning/i.test(m[1]) ? TODAY : addDays(TODAY, -1), m)
+  for (const m of t.matchAll(/\b(\d+|two|three|four|five|six|seven|eight|nine|ten) days ago\b/gi)) addDate(addDays(TODAY, -(WORDNUM[m[1].toLowerCase()] ?? +m[1])), m)
+  dates.sort((a, b) => a.i - b.i)
+  dates.forEach((d) => (d.filed = FILED_CTX.test(t.slice(Math.max(0, d.i - 40), d.i))))
+  const incident = dates.find((d) => !d.filed)
+  const filed = dates.find((d) => d.filed) || (incident && dates.find((d) => d !== incident && d.v >= incident.v))
+  if (incident) put('incident_date', incident.v, incident.i, incident.j)
+  if (filed) put('claim_filed_date', filed.v, filed.i, filed.j)
+
+  // state: full names (longest first so "West Virginia" beats "Virginia") or ", TX" / "in TX"
+  let st = null
+  for (const [code, name] of [...STATES].sort((a, b) => b[1].length - a[1].length)) {
+    const m = new RegExp('\\b' + name + '\\b', 'i').exec(t)
+    if (m && (!st || m.index < st.i)) st = { v: code, i: m.index, j: m.index + m[0].length }
+  }
+  for (const m of t.matchAll(/(?:,\s*|\bin\s+)([A-Z]{2})\b/g))
+    if (stateName(m[1]) && (!st || m.index < st.i)) st = { v: m[1], i: m.index, j: m.index + m[0].length }
+  if (st) put('state', st.v, st.i, st.j)
+
+  // claim type: whichever vocabulary shows up most, ties left to the backend's auto-detect
+  const scores = Object.entries(TYPE_WORDS).map(([k, re]) => [k, [...t.matchAll(re)]]).sort((a, b) => b[1].length - a[1].length)
+  if (scores[0][1].length && scores[0][1].length > scores[1][1].length) { const m = scores[0][1][0]; put('claim_type', scores[0][0], m.index, m.index + m[0].length) }
+
+  // earlier claims
+  let pm = /\b(\d+|no|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:prior|previous|earlier|past|other)\s+claims?\b/i.exec(t)
+  if (pm) put('previous_claims_count', WORDNUM[pm[1].toLowerCase()] ?? +pm[1], pm.index, pm.index + pm[0].length)
+  else if ((pm = /\b(first claim|never (?:filed|made|had) a claim)\b/i.exec(t))) put('previous_claims_count', 0, pm.index, pm.index + pm[0].length)
+
+  // tenure
+  let tm = /\b(?:customer|policyholder|insured|client|member|with us)\b[^.\d]{0,20}?(\d+(?:\.\d+)?)\s*(years?|yrs?|months?)\b/i.exec(t)
+    || /\b(\d+(?:\.\d+)?)\s*(years?|yrs?|months?)\s+(?:as (?:a )?(?:customer|policyholder)|with us|on the policy)/i.exec(t)
+  if (tm) put('policyholder_tenure_years', /^m/i.test(tm[2]) ? Math.round((tm[1] / 12) * 100) / 100 : +tm[1], tm.index, tm.index + tm[0].length)
+  else if ((tm = /\b(?:customer|policyholder|insured|with us)\s+since\s+((?:19|20)\d{2})\b/i.exec(t)))
+    put('policyholder_tenure_years', Math.max(0, new Date().getFullYear() - +tm[1]), tm.index, tm.index + tm[0].length)
+
+  // documents: mentioned and received vs mentioned as missing
+  const docs = [], missing = []
+  let firstDoc = null
+  for (const [name, re] of DOC_WORDS)
+    for (const m of t.matchAll(re)) {
+      const before = t.slice(Math.max(0, m.index - 40), m.index)
+      if (NEGATED.test(before)) { if (!missing.includes(name)) missing.push(name) }
+      else if (!docs.includes(name)) { docs.push(name); if (!firstDoc || m.index < firstDoc.i) firstDoc = { i: m.index, j: m.index + m[0].length } }
+    }
+  const realMissing = missing.filter((d) => !docs.includes(d))
+  if (docs.length) put('provided_documents', docs, firstDoc.i, firstDoc.j)
+
+  return { fields: out, theft: /\b(stolen|theft|stole|burglar\w*|broke into|break-in)\b/i.test(t), missingDocs: realMissing }
+}
+
+function applyNotes() {
+  const r = readNotes(claim.description)
+  const changed = []
+  for (const f of ORDER) {
+    if (prov[f]?.src === 'you') continue
+    const hit = r.fields[f]
+    if (hit) {
+      const v = f === 'provided_documents' ? hit.value : String(hit.value)
+      if (JSON.stringify(v) !== JSON.stringify(claim[f])) changed.push(f)
+      claim[f] = v
+      prov[f] = { src: 'notes', snip: hit.snip }
+    } else if (prov[f]?.src === 'notes') {
+      claim[f] = f === 'provided_documents' ? [] : ''
+      delete prov[f]
+    }
+  }
+  signals = { theft: r.theft, missingDocs: r.missingDocs }
+  render(changed)
+}
+
+// ---------- the sentence ----------
+const DOC_ARTICLE = { 'incident statement': 'an incident statement', 'police report': 'a police report', 'repair estimate': 'a repair estimate', photos: 'photos', invoice: 'an invoice', 'medical report': 'a medical report', 'inspection report': 'an inspection report' }
+const listJoin = (a) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1])
+
+function display(f) {
+  const v = claim[f]
+  switch (f) {
+    case 'claim_type': return TYPE_TEXT[v]
+    case 'state': return v ? stateName(v) : null
+    case 'claim_amount': case 'deductible': return v !== '' ? fmtMoney(v) : null
+    case 'incident_date': return v ? fmtDate(v) : null
+    case 'claim_filed_date': {
+      if (!v) return null
+      if (claim.incident_date) {
+        const d = daysBetween(claim.incident_date, v)
+        if (d === 0) return 'the same day'
+        if (d === 1) return 'the next day'
+        if (d > 1) return `${d} days later`
+      }
+      return 'on ' + fmtDate(v)
+    }
+    case 'policyholder_tenure_years': {
+      if (v === '') return null
+      const n = Number(v)
+      return n < 1 ? 'for under a year' : `for ${n} year${n === 1 ? '' : 's'}`
+    }
+    case 'previous_claims_count': {
+      if (v === '') return null
+      const n = Number(v)
+      return n === 0 ? 'no earlier claims' : `${n} earlier claim${n === 1 ? '' : 's'}`
+    }
+    case 'provided_documents': return v.length ? listJoin(v.map((d) => DOC_ARTICLE[d] || d)) : 'nothing yet'
+  }
+}
+
+function tok(f) {
+  const text = display(f)
+  const optEmpty = FIELDS[f].optional && isEmpty(f)
+  const cls = ['tok', !text ? 'empty' : prov[f]?.src === 'notes' ? 'read' : optEmpty ? 'opt' : 'you']
+  const how = !text ? 'not set yet' : prov[f]?.src === 'notes' ? 'read from your notes' : optEmpty ? 'optional' : 'set by you'
+  const label = `${FIELDS[f].label}: ${f === 'claim_type' && optEmpty ? 'auto-detect' : text || ''} (${how}). Change`
+  return `<button type="button" class="${cls.join(' ')}" data-f="${f}" aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(label)}">${esc(text || FIELDS[f].ph)}</button>`
+}
+
+const tokEl = (f) => document.querySelector(`.tok[data-f="${f}"]`)
+
+function render(flash = []) {
+  $('#sentence').innerHTML =
+    `${tok('claim_type')} from ${tok('state')}, for ${tok('claim_amount')} against a ${tok('deductible')} deductible. ` +
+    `It happened on ${tok('incident_date')} and was reported ${tok('claim_filed_date')}. ` +
+    `The policyholder has been with us ${tok('policyholder_tenure_years')} and has ${tok('previous_claims_count')}. ` +
+    `They have sent ${tok('provided_documents')}.`
+  flash.forEach((f) => { const b = tokEl(f); if (b && prov[f]?.src === 'notes') b.classList.add('flash') })
+  const nx = REQUIRED.find(isEmpty)
+  if (nx && claim.description.trim().length >= 10) tokEl(nx).classList.add('next')
+  if (popField) { const b = tokEl(popField); b.classList.add('active'); b.setAttribute('aria-expanded', 'true'); placePop() }
+  renderStatus(); renderNotes(); renderCompare()
+}
+
+// ---------- footer status ----------
+function missingList() {
+  const m = []
+  if (claim.description.trim().length < 10) m.push(['description', 'what happened'])
+  for (const f of REQUIRED) if (isEmpty(f)) m.push([f, FIELDS[f].label.toLowerCase()])
+  return m
+}
+function renderStatus() {
+  const miss = missingList()
+  const total = REQUIRED.length + 1
+  $('#progress').innerHTML = Array.from({ length: total }, (_, i) => `<i class="${i < total - miss.length ? 'on' : ''}"></i>`).join('')
+  const read = ORDER.filter((f) => prov[f]?.src === 'notes').length
+  const s = $('#status')
+  if (!miss.length) {
+    s.innerHTML = `<strong>Ready.</strong> ` + (read ? `${read} detail${read === 1 ? ' was' : 's were'} read from your notes. Give the blue ones a glance.` : 'Everything was set by you.')
+    $('#go').classList.remove('waiting')
+  } else {
+    const [f, name] = miss[0]
+    s.innerHTML = `<strong>${miss.length} to go.</strong> Next: <button type="button" data-jump="${f}">${esc(name)}</button>`
+    $('#go').classList.add('waiting')
+  }
+}
+
+// ---------- margin notes ----------
+function renderNotes() {
+  const n = []
+  const read = ORDER.filter((f) => prov[f]?.src === 'notes').length
+  if (read) n.push(['sky', `${read} detail${read === 1 ? '' : 's'} read from your notes`, 'Underlined in blue. Click one to see the words it came from.'])
+  const amt = claim.claim_amount === '' ? null : Number(claim.claim_amount)
+  const ded = claim.deductible === '' ? null : Number(claim.deductible)
+  if (signals.theft && !claim.provided_documents.includes('police report'))
+    n.push(['rose', 'Theft, but no police report', 'The brief will list the report as missing evidence.'])
+  for (const d of signals.missingDocs) if (!(signals.theft && d === 'police report')) n.push(['amber', `Notes say the ${d} is still missing`, 'Left out of “documents received”.'])
+  if (claim.incident_date && claim.claim_filed_date) {
+    const d = daysBetween(claim.incident_date, claim.claim_filed_date)
+    if (d < 0) n.push(['rose', 'Filed before the incident', 'Check the two dates. The filing date must come on or after the incident.'])
+    else if (d > 30) n.push(['amber', `Reported ${d} days after the incident`, 'Late reporting is one of the things the investigation looks at.'])
+    else n.push(['', `Reported ${d === 0 ? 'the same day' : d === 1 ? 'the next day' : d + ' days after the incident'}`, 'Within the usual reporting window.'])
+  }
+  if (amt !== null && ded !== null) {
+    if (ded > amt) n.push(['rose', 'Deductible is larger than the claim', 'There would be nothing to pay out.'])
+    else n.push(['teal', `Net exposure ${fmtMoney(amt - ded)}`, 'Claim amount minus the deductible.'])
+  }
+  if (amt !== null && amt >= 50000) n.push(['amber', 'Large loss', 'Above $50,000.'])
+  const prior = claim.previous_claims_count === '' ? null : Number(claim.previous_claims_count)
+  if (prior !== null && prior >= 3) n.push(['amber', `${prior} earlier claims`, 'A frequent claimant history is weighed in the brief.'])
+  const ten = claim.policyholder_tenure_years === '' ? null : Number(claim.policyholder_tenure_years)
+  if (ten !== null && ten < 1) n.push(['amber', 'New policyholder', 'Less than a year on the policy.'])
+  $('#notes').innerHTML = n.length
+    ? n.map(([tone, b, s]) => `<div class="note ${tone}"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join('')
+    : `<div class="note empty">Notes appear here as the claim takes shape: reporting delay, net exposure, missing evidence.</div>`
+}
+
+// ---------- compare ----------
+function buildFilters() {
+  const f = {}
+  if (match.type && claim.claim_type) f.claim_type = claim.claim_type
+  if (match.state && claim.state) f.state = claim.state
+  if (match.status) f.claim_status = match.status
+  if (match.amount && claim.claim_amount !== '') { const a = Number(claim.claim_amount); f.min_amount = Math.round(a * 0.5); f.max_amount = Math.round(a * 1.5) }
+  if (match.history && claim.previous_claims_count !== '') { const p = Number(claim.previous_claims_count); f.min_previous_claims = Math.max(0, p - 1); f.max_previous_claims = p + 1 }
+  return f
+}
+function renderCompare() {
+  const chips = [
+    ['type', 'Same type', !claim.claim_type, 'Set the claim type first'],
+    ['state', 'Same state', !claim.state, 'Set the state first'],
+    ['amount', 'Similar amount', claim.claim_amount === '', 'Set the claim amount first'],
+    ['history', 'Similar history', claim.previous_claims_count === '', 'Set the earlier claims first'],
+  ]
+  const OUT = [['', 'Any outcome'], ['approved', 'Approved'], ['denied', 'Denied'], ['pending', 'Pending'], ['under_review', 'Under review']]
+  $('#match').innerHTML = chips.map(([k, l, dis, why]) => `<button type="button" class="mchip" data-m="${k}" aria-pressed="${match[k] && !dis}" ${dis ? `disabled title="${why}"` : ''}>${l}</button>`).join('')
+    + `<span class="outcome" role="group" aria-label="Outcome">${OUT.map(([v, l]) => `<button type="button" data-o="${v}" aria-pressed="${match.status === v}">${l}</button>`).join('')}</span>`
+  const f = buildFilters()
+  const parts = []
+  if (f.claim_type) parts.push(`${f.claim_type} claims`); else parts.push('all historical claims')
+  if (f.state) parts.push(`from ${stateName(f.state)}`)
+  if (f.min_amount !== undefined) parts.push(`between ${fmtMoney(f.min_amount)} and ${fmtMoney(f.max_amount)}`)
+  if (f.min_previous_claims !== undefined) parts.push(`with ${f.min_previous_claims}–${f.max_previous_claims} earlier claims`)
+  if (f.claim_status) parts.push(`that were ${f.claim_status.replace('_', ' ')}`)
+  $('#cmpCaption').textContent = 'Comparing against ' + parts.join(', ') + '.'
+}
+
+// ---------- popover editors ----------
+const pop = $('#pop')
+let popField = null
+
+function chipRow(items, current) {
+  return `<div class="chips">${items.map(([v, l]) => `<button type="button" class="chip ${String(current) === String(v) ? 'on' : ''}" data-val="${esc(v)}">${esc(l)}</button>`).join('')}</div>`
+}
+const DONE = `<div class="pop-foot"><span class="perr" id="perr" role="alert"></span><button type="button" class="done" data-done>Done <kbd>↵</kbd></button></div>`
+
+function popBody(f) {
+  const v = claim[f]
+  switch (f) {
+    case 'claim_type':
+      return chipRow(TYPES, v) + `<p class="hint">Auto-detect lets the system classify it from the description.</p>`
+    case 'state':
+      return `<input class="pin" id="pi" placeholder="Type a state or code…" autocomplete="off" value="${esc(stateName(v))}"><ul class="opts" id="po"></ul>`
+    case 'claim_amount': case 'deductible':
+      return `<div class="affix"><span>$</span><input class="pin" id="pi" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(v)}"></div>`
+        + (f === 'deductible' ? chipRow([[250, '$250'], [500, '$500'], [1000, '$1,000'], [2500, '$2,500']], v) : '') + DONE
+    case 'incident_date':
+      return `<input class="pin" id="pi" type="date" max="${TODAY}" value="${v}">`
+        + chipRow([[TODAY, 'Today'], [addDays(TODAY, -1), 'Yesterday'], [addDays(TODAY, -3), '3 days ago'], [addDays(TODAY, -7), 'A week ago']], v) + DONE
+    case 'claim_filed_date': {
+      const base = claim.incident_date
+      const opts = base
+        ? [[0, 'Same day'], [1, 'Next day'], [3, '3 days later'], [7, 'A week later']].map(([n, l]) => [addDays(base, n), l]).filter(([d]) => d <= TODAY)
+        : [[TODAY, 'Today'], [addDays(TODAY, -1), 'Yesterday']]
+      return `<input class="pin" id="pi" type="date" max="${TODAY}" ${base ? `min="${base}"` : ''} value="${v}">` + chipRow(opts, v) + DONE
+    }
+    case 'policyholder_tenure_years':
+      return `<div class="affix"><input class="pin" id="pi" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(v)}"><span style="padding:0 11px">years</span></div>`
+        + chipRow([[0.5, 'Under a year'], [1, '1 year'], [3, '3 years'], [5, '5 years'], [10, '10 years']], v) + DONE
+    case 'previous_claims_count':
+      return `<div class="stepper"><button type="button" data-step="-1" aria-label="One fewer">−</button><input class="pin" id="pi" inputmode="numeric" autocomplete="off" placeholder="0" value="${esc(v)}"><button type="button" data-step="1" aria-label="One more">+</button></div>`
+        + chipRow([[0, 'None'], [1, '1'], [2, '2'], [3, '3'], [5, '5']], v) + DONE
+    case 'provided_documents': {
+      const all = [...DOCS, ...v.filter((d) => !DOCS.includes(d))]
+      return `<div class="chips">${all.map((d) => `<button type="button" class="chip ${v.includes(d) ? 'on' : ''}" data-doc="${esc(d)}" aria-pressed="${v.includes(d)}">${esc(d)}</button>`).join('')}</div>`
+        + `<input class="pin" id="pi" style="margin-top:10px" maxlength="200" placeholder="Add another, press Enter" autocomplete="off">`
+        + `<p class="hint">Names only. Nothing is uploaded.</p>` + DONE
+    }
+  }
+}
+
+function openPop(f) {
+  closePop(false)
+  popField = f
+  const p = prov[f]
+  pop.innerHTML = `<div class="pop-head"><span class="pop-title">${FIELDS[f].label}</span>${p?.src === 'notes' ? `<span class="pill sky">${p.via === 'model' ? 'read by the model' : 'from your notes'}</span>` : ''}<button type="button" class="x" data-close aria-label="Close">×</button></div>`
+    + (p?.src === 'notes' ? `<blockquote class="quote">${esc(p.snip)}</blockquote>` : '') + popBody(f)
+  pop.setAttribute('aria-label', FIELDS[f].label)
+  pop.hidden = false
+  const b = tokEl(f); b.classList.add('active'); b.setAttribute('aria-expanded', 'true')
+  if (f === 'state') listStates()
+  placePop()
+  const first = pop.querySelector('#pi') || pop.querySelector('.chip.on') || pop.querySelector('.chip')
+  first?.focus()
+  if (first?.select && first.type !== 'date') first.select()
+}
+
+function closePop(restore = true) {
+  if (!popField) return
+  const b = tokEl(popField)
+  popField = null
+  pop.hidden = true
+  if (b) { b.classList.remove('active'); b.setAttribute('aria-expanded', 'false'); if (restore) b.focus() }
+}
+
+function placePop() {
+  if (!popField || pop.hidden) return
+  if (innerWidth <= 640) { pop.classList.add('sheetmode'); pop.style.left = pop.style.top = ''; return }
+  pop.classList.remove('sheetmode')
+  const r = tokEl(popField).getClientRects()[0] || tokEl(popField).getBoundingClientRect()
+  const w = pop.offsetWidth
+  const left = Math.max(scrollX + 16, Math.min(r.left + scrollX, scrollX + innerWidth - w - 16))
+  pop.style.left = left + 'px'
+  pop.style.top = r.bottom + scrollY + 10 + 'px'
+}
+
+function listStates() {
+  const q = $('#pi').value.trim().toLowerCase()
+  const hits = STATES.filter(([c, n]) => !q || n.toLowerCase().startsWith(q) || c.toLowerCase() === q).concat(q ? STATES.filter(([c, n]) => !n.toLowerCase().startsWith(q) && c.toLowerCase() !== q && n.toLowerCase().includes(q)) : [])
+  $('#po').innerHTML = hits.slice(0, 7).map(([c, n]) => `<li><button type="button" data-val="${c}">${n}<small>${c}</small></button></li>`).join('') || '<li class="hint" style="padding:6px 9px">No US state matches.</li>'
+}
+
+function commit(f, value, advance = true) {
+  claim[f] = value
+  prov[f] = { src: 'you' }
+  closePop(false)
+  render()
+  if (!advance) return tokEl(f).focus()
+  const start = ORDER.indexOf(f)
+  const rest = [...ORDER.slice(start + 1), ...ORDER.slice(0, start)].filter((x) => REQUIRED.includes(x) && isEmpty(x))
+  if (rest.length) openPop(rest[0]); else tokEl(f).focus()
+}
+
+const perr = (msg) => { const e = $('#perr'); if (e) e.textContent = msg; $('#pi')?.focus() }
+
+function readInput(f) {
+  const raw = ($('#pi')?.value || '').trim()
+  switch (f) {
+    case 'claim_amount': case 'deductible': {
+      const n = Number(raw.replace(/[$,\s]/g, ''))
+      if (raw === '' || !Number.isFinite(n) || n < 0) return perr('Enter an amount, for example 12,400.')
+      if (n > 1e9) return perr('Amounts cannot exceed one billion dollars.')
+      return commit(f, String(n))
+    }
+    case 'incident_date': case 'claim_filed_date': {
+      if (!raw) return perr('Pick a date.')
+      if (raw > TODAY) return perr('Dates cannot be in the future.')
+      if (f === 'claim_filed_date' && claim.incident_date && raw < claim.incident_date) return perr('Filing must be on or after the incident.')
+      return commit(f, raw)
+    }
+    case 'policyholder_tenure_years': {
+      const n = Number(raw)
+      if (raw === '' || !Number.isFinite(n) || n < 0 || n > 100) return perr('Enter years between 0 and 100.')
+      return commit(f, String(n))
+    }
+    case 'previous_claims_count': {
+      const n = Number(raw)
+      if (raw === '' || !Number.isInteger(n) || n < 0 || n > 1000) return perr('Enter a whole number from 0 to 1000.')
+      return commit(f, String(n))
+    }
+    case 'state': {
+      const q = raw.toLowerCase()
+      const hit = STATES.find(([c, n]) => c.toLowerCase() === q || n.toLowerCase() === q) || STATES.find(([, n]) => n.toLowerCase().startsWith(q))
+      return q && hit ? commit(f, hit[0]) : perr('Pick a US state.')
+    }
+    case 'provided_documents': {
+      if (raw) { addDoc(raw); return }
+      prov[f] = { src: 'you' }
+      return commit(f, claim.provided_documents)
+    }
+  }
+}
+
+function addDoc(name) {
+  if (!claim.provided_documents.includes(name) && claim.provided_documents.length < 50) claim.provided_documents = [...claim.provided_documents, name]
+  prov.provided_documents = { src: 'you' }
+  render()
+  openPop('provided_documents')
+}
+
+pop.addEventListener('click', (e) => {
+  const t = e.target.closest('button')
+  if (!t || !popField) return
+  const f = popField
+  if (t.hasAttribute('data-close')) return closePop()
+  if (t.hasAttribute('data-done')) return readInput(f)
+  if (t.dataset.step) { const i = $('#pi'); i.value = Math.max(0, (Number(i.value) || 0) + Number(t.dataset.step)); return }
+  if (t.dataset.doc !== undefined) {
+    const d = t.dataset.doc
+    claim.provided_documents = claim.provided_documents.includes(d) ? claim.provided_documents.filter((x) => x !== d) : [...claim.provided_documents, d]
+    prov.provided_documents = { src: 'you' }
+    t.classList.toggle('on'); t.setAttribute('aria-pressed', claim.provided_documents.includes(d))
+    return render()
+  }
+  if (t.dataset.val !== undefined) return commit(f, t.dataset.val)
+})
+pop.addEventListener('input', (e) => { if (e.target.id === 'pi' && popField === 'state') listStates(); const er = $('#perr'); if (er) er.textContent = '' })
+pop.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'pi') { e.preventDefault(); readInput(popField) }
+})
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('.tok')
+  if (t) return popField === t.dataset.f ? closePop() : openPop(t.dataset.f)
+  const j = e.target.closest('[data-jump]')
+  if (j) return jump(j.dataset.jump)
+  const m = e.target.closest('[data-m]')
+  if (m) { match[m.dataset.m] = !match[m.dataset.m]; renderCompare(); return document.querySelector(`[data-m="${m.dataset.m}"]`).focus() }
+  const o = e.target.closest('[data-o]')
+  if (o) { match.status = o.dataset.o; renderCompare(); return document.querySelector(`[data-o="${o.dataset.o}"]`).focus() }
+})
+document.addEventListener('mousedown', (e) => { if (popField && !pop.contains(e.target) && !e.target.closest('.tok')) closePop(false) })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && popField) { e.preventDefault(); closePop() } })
+addEventListener('resize', placePop)
+
+function jump(f) {
+  if (f === 'description') { const s = $('#story'); s.focus(); s.scrollIntoView({ block: 'center', behavior: 'smooth' }); return }
+  tokEl(f).scrollIntoView({ block: 'center', behavior: 'smooth' })
+  openPop(f)
+}
+
+// ---------- the notes box ----------
+const story = $('#story')
+const grow = () => { story.style.height = 'auto'; story.style.height = story.scrollHeight + 'px' }
+let timer
+story.addEventListener('input', () => {
+  claim.description = story.value
+  $('#count').textContent = `${story.value.length} / 6000`
+  grow()
+  clearTimeout(timer)
+  timer = setTimeout(applyNotes, 220)
+  scheduleModel(1200)
+})
+
+// The model pass. In the app this is POST /api/intake/extract: CompletionClient with a
+// schema of { value, quote } per field, and the server drops any value whose quote is
+// not found word-for-word in the notes. Simulated here with a delay over the local reader.
+let modelTimer, modelRun = 0
+function scheduleModel(wait) {
+  clearTimeout(modelTimer)
+  const run = ++modelRun
+  const r = $('#reader')
+  if (claim.description.trim().length < 10) { r.className = 'reader'; r.innerHTML = ''; return }
+  modelTimer = setTimeout(() => {
+    r.className = 'reader busy'
+    r.innerHTML = '<i class="dot"></i><span>Reading your notes with the model…</span>'
+    setTimeout(() => {
+      if (run !== modelRun) return
+      let n = 0
+      for (const f of ORDER) if (prov[f]?.src === 'notes') { prov[f].via = 'model'; n++ }
+      r.className = 'reader'
+      r.innerHTML = `<i class="dot"></i>Read by <code>nemotron-3-super</code>: ${n} field${n === 1 ? '' : 's'}, each tied to a quote from your notes.`
+      render()
+    }, 1100)
+  }, wait)
+}
+function loadText(text) {
+  claim = EMPTY(); prov = {}
+  story.value = text
+  claim.description = text
+  $('#count').textContent = `${text.length} / 6000`
+  grow()
+  applyNotes()
+  scheduleModel(0)
+}
+document.querySelectorAll('[data-ex]').forEach((b) => b.addEventListener('click', () => loadText(EXAMPLES[+b.dataset.ex])))
+$('#clear').addEventListener('click', () => { loadText(''); story.focus() })
+
+// ---------- validation and send (mirrors buildClaim in IntakeForm.tsx) ----------
+function buildClaim() {
+  const c = {
+    description: claim.description.trim(),
+    claim_type: claim.claim_type || null,
+    state: claim.state,
+    incident_date: claim.incident_date,
+    claim_filed_date: claim.claim_filed_date,
+    claim_amount: Number(claim.claim_amount),
+    deductible: Number(claim.deductible),
+    previous_claims_count: Number(claim.previous_claims_count),
+    policyholder_tenure_years: Number(claim.policyholder_tenure_years),
+    provided_documents: claim.provided_documents,
+  }
+  if (c.claim_filed_date < c.incident_date) return ['claim_filed_date', null]
+  return [null, c]
+}
+
+$('#go').addEventListener('click', () => {
+  const miss = missingList()
+  if (miss.length) { toast(`${miss.length} still to fill. Taking you to ${miss[0][1]}.`); return jump(miss[0][0]) }
+  const [bad, c] = buildClaim()
+  if (bad) { toast('The filing date is before the incident date.'); return jump(bad) }
+  $('#json').textContent = JSON.stringify({ claim: c, filters: buildFilters() }, null, 2)
+  $('#dlg').showModal()
+})
+$('#peek').addEventListener('click', () => {
+  const [, c] = buildClaim()
+  $('#json').textContent = JSON.stringify({ claim: c || claim, filters: buildFilters() }, null, 2)
+  $('#dlg').showModal()
+})
+$('#dlgBack').addEventListener('click', () => $('#dlg').close())
+$('#dlgGo').addEventListener('click', () => { $('#dlg').close(); toast('Prototype: this is where the app would POST to /api/investigations.') })
+$('#classic').addEventListener('click', () => toast('Prototype: this would switch to the existing all-fields form.'))
+
+let tt
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2800) }
+
+render()
+</script>
+</body>
+</html>

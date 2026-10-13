@@ -36,7 +36,8 @@ observation times; the active artifact and its amount/resolution models remain u
 | Artifact | `artifacts/models/claims_models.joblib`, **3,649,182 bytes** |
 | Verification | Artifact reloaded; source sample and held-out predictions independently reconstructed; all primary metrics matched |
 
-No labels were generated or changed. Rich Synapt cards serve evidence retrieval; the statistical
+No labels were generated or changed. Synapt serves evidence retrieval (procedures as documents and,
+since 13 October 2026, 2,000 settled past claims in its ticket store instead of text cards); the statistical
 models train on original outcome-bearing structured records. Earlier versions used a 3,000-row
 contiguous sample, then a 200,000-row random sample; those historical results are superseded here.
 
@@ -105,6 +106,11 @@ complex candidates. Duration's advantage over
 the filing-delay comparator is only **2.61%**. Bigger samples cannot guarantee better results when
 the supplied fields lack additional predictive signal.
 
+A check on 10 October 2026 retrained gradient boosting on about 2 million rows with the same chronological
+split and fields. It matched but did not beat the saved models: duration MAE 6.315 days against 6.309 (median
+baseline 7.260), fraud average precision 0.316 against 0.321 (prevalence baseline 0.076). The amount run was
+stopped after about three hours without finishing; the saved amount model is still the claim-type median.
+
 Fraud precision **50.98%**, recall **31.86%**, F1 **0.39214**, balanced accuracy **64.65%**;
 threshold **0.287266**. Raw accuracy is **92.38%**, versus **92.28%** for an all-negative classifier.
 This is no material improvement over the previous model: precision/accuracy rise slightly while
@@ -136,7 +142,9 @@ Explanations do not establish that a claim is valid, fraudulent or entitled to p
 - Probability calibration uses independent cohorts but has no guarantee under future drift.
 - Amount has no material gain over a transparent feature-aware comparator; business claims
   retain large absolute errors. Raw fraud accuracy hides the imbalance.
-- Synapt similarity, model scores, prediction intervals and LLM-judge scores remain separate.
+- Synapt similarity, model scores, prediction intervals and LLM-judge scores remain separate. The
+  `resolution` and `fraud_flag` labels and confidences Synapt's ticket store returns are ignored; only
+  the order of the similar past claims is used.
 
 Further gains need representative permitted real claims, trustworthy outcome timestamps, richer
 pre-outcome loss and incident features, censoring-aware duration models, cohort calibration,

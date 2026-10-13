@@ -4,10 +4,10 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from claims.agents import Classification
-from claims.llm import CompletionClient, CompletionError
-from claims.models import Finding
-from claims.settings import Settings
+from claims.agents.stage_agents import Classification
+from claims.core.schemas import Finding
+from claims.core.settings import Settings
+from claims.llm.client import CompletionClient, CompletionError
 
 
 def mocked(monkeypatch, responses):
@@ -20,7 +20,7 @@ def mocked(monkeypatch, responses):
 
     transport = httpx.MockTransport(respond)
     monkeypatch.setattr(httpx, "Client", lambda **kwargs: original(transport=transport, **kwargs))
-    monkeypatch.setattr("claims.llm.time.sleep", lambda seconds: None)
+    monkeypatch.setattr("claims.llm.client.time.sleep", lambda seconds: None)
     settings = Settings(_env_file=None, agent_mode="live", nvidia_api_key="fake-nvidia-secret")
     return CompletionClient(settings, lambda *args: audit.append(args)), requests, audit
 
@@ -114,8 +114,8 @@ def test_substantive_finding_requires_citation_and_negative_conflict_is_rejected
 def test_callers_can_shorten_the_budget_and_disable_retries(monkeypatch):
     import httpx
 
-    from claims.llm import CompletionClient, CompletionError
-    from claims.settings import Settings
+    from claims.core.settings import Settings
+    from claims.llm.client import CompletionClient, CompletionError
 
     seen = []
 
@@ -132,8 +132,8 @@ def test_callers_can_shorten_the_budget_and_disable_retries(monkeypatch):
         def post(self, *args, **kwargs):
             raise httpx.ReadTimeout("slow")
 
-    monkeypatch.setattr("claims.llm.httpx.Client", Client)
-    monkeypatch.setattr("claims.llm.time.sleep", lambda seconds: None)
+    monkeypatch.setattr("claims.llm.client.httpx.Client", Client)
+    monkeypatch.setattr("claims.llm.client.time.sleep", lambda seconds: None)
     settings = Settings(_env_file=None, agent_mode="live", nvidia_api_key="k", llm_timeout_seconds=60)
     client = CompletionClient(settings, lambda *a: None)
     with pytest.raises(CompletionError):

@@ -6,12 +6,12 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
-from claims.adapters import build_synapt_adapter
-from claims.analytics import AnalyticsService
-from claims.demo import DEMO_CASES
-from claims.evaluation import EvaluationService
-from claims.settings import Settings
-from claims.workflow import InvestigationService
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.settings import Settings
+from claims.evaluation.service import EvaluationService
+from claims.investigation.workflow import InvestigationService
+from claims.ml.analytics import AnalyticsService
+from claims.synapt.adapter import build_synapt_adapter
 
 
 def main():
@@ -20,8 +20,8 @@ def main():
                         default=Path("artifacts/evaluation/audit-2026-10-07/fresh"))
     args = parser.parse_args()
     settings = Settings()
-    if settings.agent_mode != "live" or settings.synapt_mode != "live":
-        raise SystemExit("Fresh live goldens require configured live Synapt and agents")
+    if settings.agent_mode != "live":
+        raise SystemExit("Fresh live goldens require live agents (Synapt is always live)")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     settings = settings.model_copy(update={
         "claims_database_path": args.output_dir / f"fresh-{uuid4()}.sqlite",

@@ -7,7 +7,7 @@ schema-only: login accounts and sessions remain specific to the local machine.
 import sqlite3
 from pathlib import Path
 
-from claims.settings import Settings
+from claims.core.settings import Settings
 
 settings = Settings()
 root = Path(__file__).resolve().parents[1]

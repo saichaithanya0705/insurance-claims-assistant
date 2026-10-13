@@ -294,11 +294,12 @@ test('the trace list marks reconstructed runs, evaluation-suite runs and untrace
 })
 
 /* ---------- navigation ---------- */
-test('explainability is open to handlers; observability and the rest stay administrator tools', () => {
+test('explainability and the agents page are open to handlers; observability and the rest stay administrator tools', () => {
   const byView = Object.fromEntries(NAV.map((n) => [n.view, n]))
   assert.equal(byView.explain.admin, undefined)
+  assert.equal(byView.agents.admin, undefined)
   assert.equal(byView.observability.admin, true)
   // Shortcut numbers follow the order shown, with no duplicates.
-  assert.deepEqual(NAV.map((n) => n.key), ['1', '2', '3', '4', '5', '6', '7'])
-  assert.deepEqual(NAV.filter((n) => !n.admin).map((n) => n.view), ['workspace', 'cases', 'explain'])
+  assert.deepEqual(NAV.map((n) => n.key), ['1', '2', '3', '4', '5', '6', '7', '8'])
+  assert.deepEqual(NAV.filter((n) => !n.admin).map((n) => n.view), ['workspace', 'cases', 'explain', 'agents'])
 })

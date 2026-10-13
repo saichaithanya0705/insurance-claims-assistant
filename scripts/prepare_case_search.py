@@ -2,7 +2,7 @@
 
 from fastembed import TextEmbedding
 
-from claims.settings import Settings
+from claims.core.settings import Settings
 
 settings = Settings()
 model = TextEmbedding(

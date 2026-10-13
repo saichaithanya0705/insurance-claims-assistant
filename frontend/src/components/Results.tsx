@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle,
   BookOpen,
@@ -12,6 +12,7 @@ import {
   GitCompare,
   Layers,
   Link2,
+  MessageSquareText,
   Minus,
   Route,
   Search,
@@ -22,6 +23,10 @@ import type { Evidence, Finding, FindingKind, GlobalExplanation, LocalExplanatio
 import { cx, daysBetween, label, modeLabel, money, num, pct, shortTitle } from '../lib/format'
 import { Bar, Card, CountUp, DataView, Gauge, Pill, ScoreRing, Tilt, itemVariants, listVariants, useToast } from './ui'
 import { claimSnapshot, comparisonSnapshot, findingText, provenanceLabel, readable, sourceExcerpt, sourceTitle } from '../lib/presentation'
+import { CohortPanel } from './CohortPanel'
+import { KnowledgeGraphPanel } from './KnowledgeGraphPanel'
+import { QueryAgentPanel } from './QueryAgentPanel'
+import { SideChatPanel } from './SideChat'
 import { Inspector } from './Inspector'
 import { AuditLog } from './AuditLog'
 import { ExplanationView } from './ExplanationView'
@@ -84,6 +89,17 @@ export function RunView({ run, onDetails, onReview, admin = false, onExplain, on
   const toast = useToast()
   const [tab, setTab] = useState<Tab>('brief')
   const [highlight, setHighlight] = useState<string | null>(null)
+  // The side chat is mounted the first time it is opened and then only hidden, so a draft and the thread survive closing it.
+  const [sideMounted, setSideMounted] = useState(false)
+  const [sideOpen, setSideOpen] = useState(false)
+  const toggleSide = useCallback(() => { setSideMounted(true); setSideOpen((open) => !open) }, [])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyB') { e.preventDefault(); toggleSide() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggleSide])
   const evidence = run.evidence ?? []
   const comparisons = run.similar_cases ?? []
   const claim = run.claim ?? ({} as Run['claim'])
@@ -100,6 +116,14 @@ export function RunView({ run, onDetails, onReview, admin = false, onExplain, on
     try {
       await navigator.clipboard.writeText(run.run_id)
       toast('Run ID copied to clipboard.')
+    } catch {
+      toast('Clipboard unavailable in this context.', 'err')
+    }
+  }
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast('Answer copied. It is not added to the brief.')
     } catch {
       toast('Clipboard unavailable in this context.', 'err')
     }
@@ -153,6 +177,9 @@ export function RunView({ run, onDetails, onReview, admin = false, onExplain, on
             <button className="icon-btn" onClick={exportJson} aria-label="Export brief as JSON" title="Export JSON">
               <Download size={15} />
             </button>
+            <button className="btn side-open" onClick={toggleSide} aria-expanded={sideOpen} aria-controls="side-panel" title="Ask about this claim without changing the investigation (Alt+B)">
+              <MessageSquareText size={15} aria-hidden="true" /> Ask on the side
+            </button>
           </div>
         </div>
 
@@ -166,7 +193,7 @@ export function RunView({ run, onDetails, onReview, admin = false, onExplain, on
         <VerdictBand run={run} admin={admin} onReview={onReview} onEvidence={() => setTab('evidence')} />
       </Card>
 
-      <nav className={`mobile-case-nav${admin ? '' : ' user-nav'}`} aria-label="Current case navigation"><button onClick={onDetails}>Case</button><button onClick={() => { setTab('brief'); document.getElementById('tab-brief')?.focus() }}>Brief</button><button onClick={() => { setTab('evidence'); document.getElementById('tab-evidence')?.focus() }}>Evidence</button>{admin && <button onClick={onReview}>Review</button>}</nav>
+      <nav className={`mobile-case-nav${admin ? '' : ' user-nav'}`} aria-label="Current case navigation"><button onClick={onDetails}>Case</button><button onClick={() => { setTab('brief'); document.getElementById('tab-brief')?.focus() }}>Brief</button><button onClick={() => { setTab('evidence'); document.getElementById('tab-evidence')?.focus() }}>Evidence</button><button onClick={toggleSide}>Ask</button>{admin && <button onClick={onReview}>Review</button>}</nav>
       {/* ---------- Tabs ---------- */}
       <Card className="results-card" spot={false} aria-label="Investigation results">
         <div className="tabs" role="tablist" aria-label="Investigation views">
@@ -214,8 +241,19 @@ export function RunView({ run, onDetails, onReview, admin = false, onExplain, on
             transition={{ duration: 0.25, ease: 'easeOut' }}
           >
             {tab === 'brief' && <BriefPanel run={run} onSource={openSource} admin={admin} />}
-            {tab === 'comparisons' && <ComparisonsPanel cases={comparisons} />}
-            {tab === 'evidence' && <EvidencePanel evidence={evidence} highlight={highlight} run={run} />}
+            {tab === 'comparisons' && (
+              <>
+                <CohortPanel cohort={run.cohort} />
+                <ComparisonsPanel cases={comparisons} />
+              </>
+            )}
+            {tab === 'evidence' && (
+              <>
+                <QueryAgentPanel queryAgent={run.query_agent} admin={admin} evidence={evidence} onOpen={openSource} runId={run.run_id} />
+                <KnowledgeGraphPanel graph={run.graph} claimType={classification?.claim_type ?? claim.claim_type} onOpen={openSource} />
+                <EvidencePanel evidence={evidence} highlight={highlight} run={run} />
+              </>
+            )}
             {tab === 'explain' && (
               <>
                 {onExplain && (
@@ -239,6 +277,7 @@ export function RunView({ run, onDetails, onReview, admin = false, onExplain, on
         {admin && <p className="footnote">Original source passages and retrieval metadata are available in Activity.</p>}
         <div className="case-tools"><button className="btn" onClick={() => { const id = inspected.source_id; setHighlight(null); setTab('evidence'); window.setTimeout(() => { const el = document.querySelector<HTMLElement>(`[data-source-id="${CSS.escape(id)}"]`); el?.scrollIntoView({ block: 'center' }); el?.focus({ preventScroll: true }) }, 350) }}>Open full source in Evidence</button><button className="btn primary" onClick={() => setHighlight(null)}>Back to finding</button></div>
       </Inspector>}
+      {sideMounted && <SideChatPanel run={run} admin={admin} open={sideOpen} onClose={() => setSideOpen(false)} onOpenSource={openSource} onCopy={copyText} />}
     </>
   )
 }
@@ -329,6 +368,16 @@ function BriefPanel({ run, onSource, admin = false }: { run: Run; onSource: (id:
 
   return (
     <>
+      {run.supervisor?.summary && (
+        <section className="sup-summary" data-testid="supervisor-summary" aria-labelledby="sup-summary-h">
+          <h3 id="sup-summary-h">Summary for the handler</h3>
+          <p>{run.supervisor.summary}</p>
+          <small>
+            Written by the Supervisor Agent from this brief. It adds no evidence and decides nothing about the claim.
+            {run.supervisor.revised && run.supervisor.revision ? ` The findings were sent back once to fix: ${run.supervisor.revision.issues.join(' ')} The brief was then checked again${run.supervisor.revision.passed_after ? ' and now passes.' : ' and is still flagged.'}` : ''}
+          </small>
+        </section>
+      )}
       <section className={cx('attention-summary', attention.length > 0 && 'has-gaps')}><h3>What needs attention</h3><p>{run.status === 'failed' ? 'The investigation failed. Inspect the error and Activity details before retrying.' : attention.length ? `${attention.length} unresolved evidence ${attention.length === 1 ? 'gap or concern' : 'gaps or concerns'}. ${readable(attention[0].text)}` : 'No explicit gaps or contradictions were returned. Verify the evidence and policy terms before accepting the brief.'}</p><p><strong>Next step:</strong> {run.recommendations?.[0]?.action || 'Inspect the evidence, then review this brief.'}</p><p className="footnote">Validation: {run.validation ? run.validation.passed ? 'Mechanical checks passed' : 'Needs attention' : 'Unavailable'}. Scope: schema, citation membership and action boundaries; it does not establish truth. {run.claim?.provided_documents?.length ? 'Listed documents are reported available only; no document content was received or reviewed.' : ''}</p></section>
       <div className="section">
         <div className="section-title">

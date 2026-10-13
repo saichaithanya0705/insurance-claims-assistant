@@ -4,7 +4,7 @@ Ambiguous writes are retained as unknown and reconciled by retrieving content; n
 automatically resubmit a timed-out write. Provider count growth alone is not completion.
 
 `--verify-only` checks every batch from Synapt's graph (document sizes and text spans, see
-claims.synapt_inventory) against data/synapt/expected_inventory.json and records the result in the
+claims.synapt.inventory) against data/synapt/expected_inventory.json and records the result in the
 local ledger. The retrieval check used while uploading (`verify_batch`) cannot confirm a batch once the
 store holds more than a few thousand chunks, because the tenant returns at most ~1,900 chunks per query
 and rejects a larger `top_k`. This provider is fully populated, so do not upload again.
@@ -21,10 +21,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from claims.adapters import LiveSynaptAdapter, SynaptError
-from claims.cards import claim_alias, claim_ids_in_text
-from claims.settings import Settings
-from claims.synapt_inventory import INVENTORY_PATH, load_expected, summary_lines, verify_store
+from claims.agents import access
+from claims.core.settings import Settings
+from claims.corpus.cards import claim_alias, claim_ids_in_text
+from claims.synapt.adapter import LiveSynaptAdapter, SynaptError
+from claims.synapt.inventory import INVENTORY_PATH, load_expected, summary_lines, verify_store
 
 
 def unwrap(payload):
@@ -97,8 +98,6 @@ async def reconcile(adapter, provider, selected, ledger, states):
 
 async def main(args):
     settings = Settings()
-    if settings.synapt_mode != "live":
-        raise ValueError("Live configured Synapt access is required")
     provider = settings.synapt_provider_id
     adapter = LiveSynaptAdapter(settings)
     manifest = json.loads((args.corpus / "manifest.json").read_text(encoding="utf-8"))
@@ -179,4 +178,4 @@ if __name__ == "__main__":
     parser.add_argument("--verify-only", action="store_true", help="Reconcile all tracked batches without writes")
     parser.add_argument("--targeted", action="store_true", help="Deprecated: graph verification is always exact")
     parser.add_argument("--retry-rejected", action="store_true", help="Explicitly retry only confirmed rejected writes")
-    asyncio.run(main(parser.parse_args()))
+    access.run_as("ingestion", main(parser.parse_args()))

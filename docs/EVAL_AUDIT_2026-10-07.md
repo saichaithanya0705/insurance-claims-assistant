@@ -113,7 +113,7 @@ Evidence files:
 
 ```powershell
 uv run pytest -q tests/test_evaluation.py tests/test_judge.py tests/test_workflow.py
-uv run ruff check src/claims/evaluation.py src/claims/judge.py tests/test_evaluation.py tests/test_judge.py scripts/audit_evaluations.py scripts/audit_fresh_goldens.py
+uv run ruff check src/claims/evaluation/service.py src/claims/evaluation/judge.py tests/test_evaluation.py tests/test_judge.py scripts/audit_evaluations.py scripts/audit_fresh_goldens.py
 uv run python scripts/audit_evaluations.py --snapshot-dir artifacts/evaluation/live-2026-10-06 --live
 uv run python scripts/audit_evaluations.py --snapshot-dir artifacts/evaluation/live-2026-10-06 --live --resume
 uv run python scripts/audit_fresh_goldens.py

@@ -1,6 +1,6 @@
-from claims.demo import DEMO_CASES
-from claims.models import ClaimInput
-from claims.priority import FLAGGED_SIMILAR_THRESHOLD, score_priority, tier_for
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.schemas import ClaimInput
+from claims.investigation.priority import FLAGGED_SIMILAR_THRESHOLD, score_priority, tier_for
 
 
 def claim(**changes):

@@ -7,10 +7,10 @@ import duckdb
 import pytest
 from mcp.types import CallToolResult
 
-from claims.adapters import LiveSynaptAdapter, SynaptError
-from claims.card_dataset import build_card_dataset, known_claim_ids, select_expansion
-from claims.dataset import ClaimsStore
-from claims.settings import Settings
+from claims.core.settings import Settings
+from claims.corpus.card_dataset import build_card_dataset, known_claim_ids, select_expansion
+from claims.history.dataset import ClaimsStore
+from claims.synapt.adapter import LiveSynaptAdapter, SynaptError
 
 
 @pytest.fixture

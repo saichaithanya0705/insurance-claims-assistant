@@ -8,17 +8,17 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from claims.api import app as default_app
-from claims.api import create_app
-from claims.demo import DEMO_CASES
-from claims.models import ClaimInput
-from claims.settings import Settings
+from claims.api.main import app as default_app
+from claims.api.main import create_app
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.schemas import ClaimInput
+from claims.core.settings import Settings
 
 
 def main(resume=False):
     settings = Settings()
-    if settings.synapt_mode != "live" or settings.agent_mode != "live":
-        raise SystemExit("This test requires live Synapt and live agents.")
+    if settings.agent_mode != "live":
+        raise SystemExit("This test requires live agents (Synapt is always live).")
     if settings.llm_base_url != "https://integrate.api.nvidia.com/v1":
         raise SystemExit("This evaluator sends synthetic claims only to NVIDIA.")
     default_app.state.service.close()

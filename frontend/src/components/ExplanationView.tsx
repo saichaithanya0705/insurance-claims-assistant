@@ -195,7 +195,7 @@ function Retrieval({ data }: { data: Explanation['retrieval'] }) {
           <div>
             <dt>Semantic matches</dt>
             <dd>
-              {data.semantic.semantic_candidates ?? 0} claim cards matched · {data.semantic.semantic_eligible ?? 0} eligible under the filters · {data.semantic.semantic_in_results ?? 0} in the results
+              {data.semantic.semantic_candidates ?? 0} similar past claims matched · {data.semantic.semantic_eligible ?? 0} eligible under the filters · {data.semantic.semantic_in_results ?? 0} in the results
             </dd>
           </div>
         )}

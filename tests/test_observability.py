@@ -9,14 +9,14 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from claims import telemetry
-from claims.api import create_app
-from claims.demo import DEMO_CASES
-from claims.observability import Observatory
-from claims.settings import Settings
-from claims.store import Store
+from claims.api.main import create_app
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.settings import Settings
+from claims.observability import telemetry
+from claims.observability.observatory import Observatory
+from claims.storage.run_store import Store
 
-STAGES = ["classify", "retrieve", "investigate", "risk", "recommend", "validate", "judge", "review"]
+STAGES = ["classify", "retrieve", "investigate", "risk", "recommend", "validate", "supervise", "judge", "review"]
 
 
 @pytest.fixture
@@ -45,6 +45,21 @@ def spans_of(app, run_id):
 
 def by_name(spans, name):
     return [s for s in spans if s["name"] == name]
+
+
+def owner(spans, span):
+    """The span a piece of work belongs to, looking through the agent that did it (agent spans sit between a stage and its work)."""
+    index = {s["span_id"]: s for s in spans}
+    parent = index.get(span["parent_id"])
+    while parent is not None and parent["kind"] == "agent":
+        parent = index.get(parent["parent_id"])
+    return parent
+
+
+def agent_of(spans, span):
+    """The agent whose span is the direct parent of this span, or None."""
+    parent = next((s for s in spans if s["span_id"] == span["parent_id"]), None)
+    return parent["attributes"]["agent"] if parent and parent["kind"] == "agent" else None
 
 
 # ----- span machinery ------------------------------------------------------------------------
@@ -149,7 +164,15 @@ def test_fixture_run_records_every_stage_with_nested_work(settings):
         ("models.predict", "risk"),
         ("priority.score", "risk"),
     ):
-        assert by_name(spans, name)[0]["parent_id"] == stages[stage]["span_id"], name
+        assert owner(spans, by_name(spans, name)[0])["span_id"] == stages[stage]["span_id"], name
+    # ...and the agent that did it is on record: each piece of work sits inside the agent responsible for it.
+    for name, agent in (
+        ("knowledge.retrieve", "passage_retriever"),
+        ("history.search", "history_analyst"),
+        ("models.predict", "risk_analyst"),
+        ("priority.score", "risk_analyst"),
+    ):
+        assert agent_of(spans, by_name(spans, name)[0]) == agent, name
     assert stages["risk"]["attributes"]["priority_score"] == run["priority"]["score"]
     checks = stages["validate"]["attributes"]["checks"]
     assert checks == run["validation"]["checks"]
@@ -246,6 +269,13 @@ def mock_model(monkeypatch, usage=None, fail_first_investigation=False):
                 "issues": [],
                 "summary": "The brief follows its evidence.",
             }
+        elif "You review a finished claims brief" in objective:
+            content = {
+                "action": "finalize",
+                "instructions": "",
+                "summary": "The brief reports an auto claim, notes what the claimant reports as available and recommends that the handler "
+                "verifies the policy terms. Priority is low.",
+            }
         elif "Classify into" in objective:
             content = {"claim_type": "auto", "method": "live_model", "needs_review": False}
         elif "Identify useful" in objective:
@@ -278,7 +308,7 @@ def mock_model(monkeypatch, usage=None, fail_first_investigation=False):
 
     transport = httpx.MockTransport(respond)
     monkeypatch.setattr(httpx, "Client", lambda **kwargs: original(transport=transport, **kwargs))
-    monkeypatch.setattr("claims.llm.time.sleep", lambda seconds: None)
+    monkeypatch.setattr("claims.llm.client.time.sleep", lambda seconds: None)
 
 
 def test_model_calls_record_purpose_tokens_attempts_and_links_to_the_full_exchange(
@@ -296,13 +326,19 @@ def test_model_calls_record_purpose_tokens_attempts_and_links_to_the_full_exchan
         spans = spans_of(app, run["run_id"])
         stages = {s["name"]: s for s in spans if s["kind"] == "stage"}
         llm = {s["attributes"]["purpose"]: s for s in spans if s["kind"] == "llm"}
-        assert set(llm) == {"classification", "investigation", "recommendation"}
+        assert set(llm) == {"classification", "investigation", "recommendation", "supervision"}
         for purpose, stage in (
             ("classification", "classify"),
             ("investigation", "investigate"),
             ("recommendation", "recommend"),
         ):
-            assert llm[purpose]["parent_id"] == stages[stage]["span_id"]
+            assert owner(spans, llm[purpose])["span_id"] == stages[stage]["span_id"]
+        assert {p: agent_of(spans, llm[p]) for p in llm if p != "supervision"} == {
+            "classification": "triage",
+            "investigation": "investigator",
+            "recommendation": "recommender",
+        }
+        assert llm["supervision"]["attributes"]["agent"] == "supervisor"  # its call sits inside the Supervisor's review step
         assert llm["classification"]["attributes"]["total_tokens"] == 150
         assert llm["classification"]["attributes"]["attempts"] == 1
         # One HTTP 503 was retried: two attempts, the first failed.
@@ -311,8 +347,8 @@ def test_model_calls_record_purpose_tokens_attempts_and_links_to_the_full_exchan
         assert [a["outcome"] for a in retried["attempt_log"]] == ["http_failure", "ok"]
         assert retried["attempt_log"][0]["status_code"] == 503
         digest = telemetry.summarize_spans(spans)["llm"]
-        assert digest["calls"] == 3 and digest["retries"] == 1
-        assert digest["tokens"] == {"prompt": 300, "completion": 150, "total": 450}
+        assert digest["calls"] == 4 and digest["retries"] == 1  # the three writers and the Supervisor
+        assert digest["tokens"] == {"prompt": 400, "completion": 200, "total": 600}
         # The span points at the audit events that hold the whole prompt and the answer.
         store = app.state.service.store
         prompt = store.audit_event(run["run_id"], llm["classification"]["attributes"]["prompt_events"][0])
@@ -335,16 +371,16 @@ def test_the_independent_review_is_recorded_as_background_work(tmp_path, monkeyp
     stages = {s["name"]: s for s in spans if s["kind"] == "stage"}
     review = by_name(spans, "judge.review")[0]
     judge_call = next(s for s in spans if s["kind"] == "llm" and s["attributes"]["purpose"] == "judge")
-    assert review["parent_id"] == stages["judge"]["span_id"]
+    assert owner(spans, review)["span_id"] == stages["judge"]["span_id"] and agent_of(spans, review) == "judge"
     assert judge_call["parent_id"] == review["span_id"]
     assert review["attributes"]["background"] is True and judge_call["attributes"]["background"] is True
     assert review["attributes"]["status"] == "completed" and review["attributes"]["passed"] is True
     foreground = [s for s in spans if s["kind"] == "llm" and not s["attributes"].get("background")]
-    assert {s["attributes"]["purpose"] for s in foreground} == {"classification", "investigation", "recommendation"}
+    assert {s["attributes"]["purpose"] for s in foreground} == {"classification", "investigation", "recommendation", "supervision"}
     # The time a handler waited excludes the review, which finishes after the brief is shown.
     digest = telemetry.summarize_spans(spans)
     assert digest["duration_ms"] == by_name(spans, "investigation")[0]["duration_ms"]
-    assert digest["llm"]["calls"] == 4
+    assert digest["llm"]["calls"] == 5  # the three writers, the Supervisor and the judge
 
 
 def test_missing_or_malformed_usage_is_recorded_as_absent_not_invented(tmp_path, monkeypatch):
@@ -519,7 +555,7 @@ def test_summary_reports_failures_errors_and_judge_outcomes(settings, monkeypatc
     assert summary["queries"]["failed"] == 1
     assert summary["queries"]["success_rate"] == pytest.approx(2 / 3)
     error = summary["errors"][0]
-    assert error["error_type"] == "RuntimeError" and error["span"] in ("investigate", "investigation")
+    assert error["error_type"] == "RuntimeError" and error["span"] in ("investigate", "investigation", "agent.investigator")
     investigate = next(s for s in summary["stages"] if s["stage"] == "investigate")
     assert investigate["errors"] == 1 and investigate["count"] == 3
     assert summary["quality"]["judge"]["skipped"] == 2  # judge is off in this configuration

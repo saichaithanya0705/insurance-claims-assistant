@@ -27,7 +27,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from improve_fraud_model import export_training
 from retrain_models import compact, verify_holdout
 
-from claims.analytics import (
+from claims.core.schemas import ClaimInput
+from claims.core.settings import Settings
+from claims.history.dataset import ClaimsStore
+from claims.ml.analytics import (
     FEATURES,
     TARGETS,
     AnalyticsService,
@@ -39,16 +42,13 @@ from claims.analytics import (
     fraud_scores,
     temporal_split,
 )
-from claims.dataset import ClaimsStore
-from claims.fraud_features import (
+from claims.ml.fraud_features import (
     FraudFeatureEncoder,
     FraudProbabilityEnsemble,
     file_digest,
     fraud_estimator_probabilities,
     rows_digest,
 )
-from claims.models import ClaimInput
-from claims.settings import Settings
 
 WINDOWS = ("2024-05-13", "2024-09-01", "2024-12-02", "2025-03-14", "2025-06-24")
 COHORT_NAMES = (

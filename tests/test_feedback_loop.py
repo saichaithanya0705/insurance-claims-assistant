@@ -4,11 +4,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from synapt_stub import StubSynaptAdapter
 
-from claims.adapters import FixtureSynaptAdapter, SynaptError
-from claims.api import create_app
-from claims.demo import DEMO_CASES
-from claims.settings import Settings
+from claims.api.main import create_app
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.settings import Settings
+from claims.synapt.adapter import SynaptError
 
 AUTO = DEMO_CASES[0]["claim"]
 HOME = DEMO_CASES[2]["claim"]
@@ -84,7 +85,7 @@ def test_nothing_is_promoted_automatically(settings):
         assert not [e for e in run["evidence"] if e["provenance"] == "handler_lesson"]
 
 
-class IngestingAdapter(FixtureSynaptAdapter):
+class IngestingAdapter(StubSynaptAdapter):
     def __init__(self, fail=False):
         self.calls, self.fail = [], fail
 
@@ -96,7 +97,7 @@ class IngestingAdapter(FixtureSynaptAdapter):
 
 
 def live_service(settings, adapter):
-    app = create_app(settings.model_copy(update={"synapt_mode": "live"}), adapter=adapter)
+    app = create_app(settings, adapter=adapter)
     return TestClient(app)
 
 

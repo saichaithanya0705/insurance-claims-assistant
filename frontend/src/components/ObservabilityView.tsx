@@ -1,6 +1,6 @@
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, ChevronRight, Gauge, ListTree, RefreshCw, Search } from 'lucide-react'
+import { Activity, AlertTriangle, ChevronRight, ClipboardCheck, Gauge, ListTree, RefreshCw, Search } from 'lucide-react'
 import { api, type ObservabilitySummary, type TraceList, type TraceListItem } from '../lib/api'
 import { cx, label, num, pct, shortTitle } from '../lib/format'
 import { compactNumber, formatDuration } from '../lib/trace'
@@ -8,6 +8,7 @@ import { Card, ErrorBox, Pill } from './ui'
 import { ChartFrame, ColumnChart, LatencyBars } from './Charts'
 import { TraceView } from './TraceView'
 import { STAGES } from './Pipeline'
+import { EvaluationRuns } from './EvaluationRuns'
 
 const WINDOWS = [
   { key: '24h', label: 'Last 24 hours' },
@@ -480,7 +481,7 @@ function TraceExplorer({ onOpen }: { onOpen: (runId: string) => void }) {
 /* ======================================================================
    Page
    ====================================================================== */
-type Tab = 'overview' | 'traces'
+type Tab = 'overview' | 'traces' | 'evaluations'
 
 export function ObservabilityView({ focusRun, onExplain }: { focusRun?: string | null; onExplain: (runId: string) => void }) {
   const [tab, setTab] = useState<Tab>(focusRun ? 'traces' : 'overview')
@@ -525,6 +526,7 @@ export function ObservabilityView({ focusRun, onExplain }: { focusRun?: string |
   const tabs: { key: Tab; label: string; icon: typeof Activity }[] = [
     { key: 'overview', label: 'Overview', icon: Gauge },
     { key: 'traces', label: 'Query traces', icon: ListTree },
+    { key: 'evaluations', label: 'Evaluation runs', icon: ClipboardCheck },
   ]
 
   return (
@@ -602,6 +604,12 @@ export function ObservabilityView({ focusRun, onExplain }: { focusRun?: string |
       {tab === 'traces' && (
         <div id="obs-panel-traces" role="tabpanel" aria-labelledby="obs-tab-traces">
           {selected ? <TraceView key={selected} runId={selected} onBack={() => choose(null)} onExplain={onExplain} /> : <TraceExplorer onOpen={choose} />}
+        </div>
+      )}
+
+      {tab === 'evaluations' && (
+        <div id="obs-panel-evaluations" role="tabpanel" aria-labelledby="obs-tab-evaluations">
+          <EvaluationRuns onOpenTrace={openTrace} />
         </div>
       )}
     </motion.section>

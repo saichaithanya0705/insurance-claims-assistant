@@ -1,4 +1,8 @@
 /** Sentence case for enum-like values: "awaiting_review" -> "Awaiting review". */
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
+/** A small count as a word, for sentences such as "the same eight stages". */
+export const countWord = (n: number) => COUNT_WORDS[n] ?? String(n)
+
 export const label = (value: unknown) => {
   const text = String(value ?? 'Unavailable').replace(/_/g, ' ')
   return text.charAt(0).toUpperCase() + text.slice(1)

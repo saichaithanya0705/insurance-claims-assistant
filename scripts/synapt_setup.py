@@ -1,12 +1,12 @@
 """Explicit live inspection or single-attempt ingestion. Never runs on app startup."""
 
 import argparse
-import asyncio
 import json
 from pathlib import Path
 
-from claims.adapters import LiveSynaptAdapter, SynaptError
-from claims.settings import Settings
+from claims.agents import access
+from claims.core.settings import Settings
+from claims.synapt.adapter import LiveSynaptAdapter, SynaptError
 
 
 async def main(args):
@@ -31,6 +31,6 @@ if __name__ == "__main__":
     commands.add_parser("stats")
     commands.add_parser("ingest").add_argument("file", type=Path)
     try:
-        asyncio.run(main(parser.parse_args()))
+        access.run_as("ingestion", main(parser.parse_args()))
     except SynaptError as exc:
         raise SystemExit(str(exc)) from None

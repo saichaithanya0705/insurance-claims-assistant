@@ -25,7 +25,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from retrain_models import compact, verify_holdout
 
-from claims.analytics import (
+from claims.core.schemas import ClaimInput
+from claims.core.settings import Settings
+from claims.history.dataset import ClaimsStore
+from claims.ml.analytics import (
     TARGETS,
     AnalyticsService,
     calibration_roles,
@@ -35,9 +38,6 @@ from claims.analytics import (
     fraud_scores,
     temporal_split,
 )
-from claims.dataset import ClaimsStore
-from claims.models import ClaimInput
-from claims.settings import Settings
 
 
 def claim_digest(rows):

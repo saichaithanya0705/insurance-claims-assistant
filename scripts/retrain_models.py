@@ -19,15 +19,15 @@ from threadpoolctl import threadpool_limits
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from claims.analytics import (
+from claims.core.settings import Settings
+from claims.ml.analytics import (
     AnalyticsService,
     feature_dict,
     fraud_classification_metrics,
     fraud_scores,
     temporal_split,
 )
-from claims.fraud_features import load_source_evaluation_rows
-from claims.settings import Settings
+from claims.ml.fraud_features import load_source_evaluation_rows
 
 
 class ReportingAnalyticsService(AnalyticsService):

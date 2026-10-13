@@ -4,9 +4,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from claims.api import create_app
-from claims.demo import DEMO_CASES
-from claims.settings import Settings
+from claims.api.main import create_app
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.settings import Settings
 
 ADMIN_PASSWORD = "Synthetic admin passphrase!"
 USER_PASSWORD = "Synthetic user passphrase!"
@@ -113,9 +113,11 @@ def test_accounts_sessions_csrf_ownership_and_admin_boundaries(tmp_path):
         for path in [
             "/api/admin/users",
             "/api/integration/status",
+            "/api/integration/synapt-stats",
             "/api/models/status",
             "/api/evaluations/status",
             "/api/feedback/lessons",
+            "/api/observability/evaluations",
         ]:
             assert client.get(path).status_code == 403
         for path in [

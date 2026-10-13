@@ -1,6 +1,5 @@
 """Read current Synapt MCP passages and measure coverage without making writes."""
 
-import asyncio
 import json
 import sys
 from collections import Counter
@@ -9,9 +8,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from claims.adapters import LiveSynaptAdapter
-from claims.cards import claim_ids_in_text
-from claims.settings import Settings
+from claims.agents import access
+from claims.core.settings import Settings
+from claims.corpus.cards import claim_ids_in_text
+from claims.synapt.adapter import LiveSynaptAdapter
 
 
 def unwrap(payload):
@@ -59,4 +59,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    access.run_as("operator", main())

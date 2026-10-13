@@ -7,9 +7,9 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from claims.card_dataset import build_card_dataset, known_claim_ids
-from claims.dataset import ClaimsStore
-from claims.settings import Settings
+from claims.core.settings import Settings
+from claims.corpus.card_dataset import build_card_dataset, known_claim_ids
+from claims.history.dataset import ClaimsStore
 
 
 def main():

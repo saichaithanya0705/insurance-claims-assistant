@@ -1,6 +1,6 @@
-from claims.demo import DEMO_CASES
-from claims.models import ClaimInput, SearchFilters
-from claims.retrieval import HistoricalRetriever
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.schemas import ClaimInput, SearchFilters
+from claims.history.retriever import HistoricalRetriever
 
 
 def test_filters_and_historical_availability(tmp_path):

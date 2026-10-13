@@ -3,10 +3,10 @@
     uv run python scripts/bootstrap.py check            # what is ready, what is missing
     uv run python scripts/bootstrap.py data             # download + verify the 100M-row Parquet (2.5 GB)
     uv run python scripts/bootstrap.py train            # train amount / resolution / fraud models
-    uv run python scripts/bootstrap.py corpus           # build the Synapt claim-card corpus (local only)
-    uv run python scripts/bootstrap.py ingest           # upload the corpus to Synapt (needs live .env)
+    uv run python scripts/bootstrap.py corpus           # build the Synapt profile-card corpus (local only)
+    uv run python scripts/bootstrap.py ingest           # upload the procedures to an EMPTY Synapt provider (claims: console Ticketing)
     uv run python scripts/bootstrap.py all              # data + train + corpus (no external writes)
-    uv run python scripts/bootstrap.py all --ingest     # ...and upload the corpus to Synapt
+    uv run python scripts/bootstrap.py all --ingest     # ...and upload the procedures to Synapt
 
 Every step is safe to re-run: existing downloads are verified and reused, models are retrained
 only on request, and Synapt batches already uploaded are skipped (ledger).
@@ -22,11 +22,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from claims.dataset import COLUMNS, DATASET, FILENAME, ClaimsStore
-from claims.settings import Settings
+from claims.core.settings import Settings
+from claims.history.dataset import COLUMNS, DATASET, FILENAME, ClaimsStore
 
 EXPECTED_ROWS = 100_000_000
-CORPUS = ROOT / "artifacts" / "synapt" / "corpus-v3"
+CORPUS = ROOT / "artifacts" / "synapt" / "corpus-profile-balanced-2026-10-09"
 
 
 def say(mark: str, text: str):
@@ -97,7 +97,7 @@ def step_data(settings: Settings, args) -> bool:
 
 def step_train(settings: Settings, args) -> bool:
     print(f"== Models (sample of {settings.claims_train_rows:,} rows drawn from the Parquet file)")
-    from claims.analytics import AnalyticsService
+    from claims.ml.analytics import AnalyticsService
 
     if not settings.claims_parquet_path.is_file():
         say("XX", "dataset missing: run `bootstrap.py data` first")
@@ -129,17 +129,20 @@ def step_train(settings: Settings, args) -> bool:
 
 
 def step_corpus(settings: Settings, args) -> bool:
-    print(f"== Synapt corpus ({args.per_type * 5:,} claim cards; local files only)")
+    print(f"== Synapt profile corpus ({args.per_type * 5:,} claim cards; local files only)")
     from datetime import date
 
-    from claims.corpus import build_corpus
+    from claims.corpus.profile_cards import build_profile_corpus
 
+    if (CORPUS / "manifest.json").exists():
+        say("ok", f"already built at {CORPUS}")
+        return True
     if not settings.claims_parquet_path.is_file():
         say("XX", "dataset missing: run `bootstrap.py data` first")
         return False
     store = ClaimsStore(settings.claims_parquet_path)
     try:
-        manifest = build_corpus(store, CORPUS, per_type=args.per_type, cutoff=date(2026, 1, 1))
+        manifest = build_profile_corpus(store, CORPUS, per_type=args.per_type, cutoff=date(2026, 1, 1))
     finally:
         store.close()
     say("ok", f"{manifest['cards']:,} cards in {len(manifest['batches'])} batches -> {CORPUS}")
@@ -147,15 +150,16 @@ def step_corpus(settings: Settings, args) -> bool:
 
 
 def step_ingest(settings: Settings, args) -> bool:
-    print("== Upload corpus to Synapt")
-    if settings.synapt_mode != "live":
-        say("XX", "SYNAPT_MODE is not live. Fill the Synapt block of .env first (see docs/SETUP.md)")
-        return False
-    command = [sys.executable, str(ROOT / "scripts" / "synapt_ingest.py"), "ingest",
-               "--corpus", str(CORPUS), "--chunk-size", "100"]
-    if args.procedures:
-        command.append("--procedures")
-    return subprocess.run(command, cwd=ROOT, check=False).returncode == 0
+    """Procedures only. Past claims belong in the provider's ticket store, not its documents (claim cards uploaded as
+    documents added almost nothing to the graph and were removed on 13 October 2026; docs/SYNAPT_INTEGRATION.md)."""
+    print("== Upload procedures to Synapt (the provider in .env must be new and empty)")
+    procedures = [sys.executable, str(ROOT / "scripts" / "synapt_ingest.py"), "ingest",
+                  "--corpus", str(CORPUS), "--procedures-only", "--chunk-size", "100"]
+    # Submission is asynchronous: confirm afterwards with scripts/verify_synapt_store.py.
+    ok = subprocess.run(procedures, cwd=ROOT, check=False).returncode == 0
+    print("   Past claims go in through the Synapt console (Data Ingestion, Ticketing), which has no MCP route:")
+    print("   build the workbook with scripts/make_ticketing_sample.py (see data/synapt/README.md) and upload it there.")
+    return ok
 
 
 def step_check(settings: Settings, args) -> bool:
@@ -175,7 +179,7 @@ def step_check(settings: Settings, args) -> bool:
     else:
         say("XX", f"dataset missing at {parquet}  ->  bootstrap.py data")
         ready = False
-    from claims.analytics import AnalyticsService
+    from claims.ml.analytics import AnalyticsService
 
     models = AnalyticsService(settings.claims_data_path, settings.claims_artifact_dir).status()
     if models.get("available"):
@@ -189,35 +193,32 @@ def step_check(settings: Settings, args) -> bool:
         f"agents: {settings.agent_mode} (key configured: {bool(settings.llm_api_key.get_secret_value())})")
     say("ok" if settings.judge_mode == "inline" else "..",
         f"independent judge: {settings.judge_mode} ({settings.judge_model or 'no JUDGE_MODEL set'})")
-    if settings.synapt_mode == "live":
-        import asyncio
+    import asyncio
 
-        from claims.adapters import LiveSynaptAdapter
-        from claims.synapt_inventory import (
-            INVENTORY_PATH,
-            load_expected,
-            summary_lines,
-            verify_store,
-        )
+    from claims.synapt.adapter import LiveSynaptAdapter
+    from claims.synapt.inventory import (
+        INVENTORY_PATH,
+        load_expected,
+        summary_lines,
+        verify_store,
+    )
 
-        async def probe():
-            # Compares the live provider with the committed inventory, so every machine gets the same
-            # answer without a local upload ledger (artifacts/ is not in Git).
-            adapter = LiveSynaptAdapter(settings)
-            return await verify_store(adapter, settings.synapt_provider_id, load_expected(ROOT / INVENTORY_PATH))
+    async def probe():
+        # Compares the live provider with the committed inventory, so every machine gets the same
+        # answer without a local upload ledger (artifacts/ is not in Git).
+        adapter = LiveSynaptAdapter(settings)
+        return await verify_store(adapter, settings.synapt_provider_id, load_expected(ROOT / INVENTORY_PATH))
 
-        try:
-            report = asyncio.run(probe())
-            say("ok", f"Synapt provider {settings.synapt_provider_id} reachable; verified against "
-                f"data/synapt/expected_inventory.json")
-            for mark, text in summary_lines(report):
-                say(mark, text)
-            ready &= report["ok"]
-        except Exception as exc:  # noqa: BLE001 - any failure is a readiness problem to report
-            say("XX", f"Synapt not reachable ({type(exc).__name__}); check .env credentials")
-            ready = False
-    else:
-        say("..", "Synapt: fixture mode (no live retrieval). Set SYNAPT_MODE=live for the real integration")
+    try:
+        report = asyncio.run(probe())
+        say("ok", f"Synapt provider {settings.synapt_provider_id} reachable; verified against "
+            f"data/synapt/expected_inventory.json")
+        for mark, text in summary_lines(report):
+            say(mark, text)
+        ready &= report["ok"]
+    except Exception as exc:  # noqa: BLE001 - any failure is a readiness problem to report
+        say("XX", f"Synapt not reachable ({type(exc).__name__}); check .env credentials")
+        ready = False
     print("\nREADY" if ready else "\nNOT READY: resolve failures or unfinished verification above")
     return ready
 
@@ -230,8 +231,8 @@ if __name__ == "__main__":
     parser.add_argument("step", choices=[*STEPS, "all"])
     parser.add_argument("--redownload", action="store_true", help="download the Parquet again")
     parser.add_argument("--retrain", action="store_true", help="retrain even if models exist")
-    parser.add_argument("--per-type", type=int, default=200, help="corpus cards per claim type")
-    parser.add_argument("--ingest", action="store_true", help="with `all`: also upload to Synapt")
+    parser.add_argument("--per-type", type=int, default=2000, help="corpus cards per claim type")
+    parser.add_argument("--ingest", action="store_true", help="with `all`: also upload the procedures to Synapt")
     parser.add_argument("--procedures", action="store_true", help="also upload the 5 procedures")
     args = parser.parse_args()
     settings = Settings()

@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from claims.evaluation import EvaluationService, golden_case_checks, judge_case_payload
-from claims.settings import Settings
+from claims.core.settings import Settings
+from claims.evaluation.service import EvaluationService, golden_case_checks, judge_case_payload
 
 
 def test_judge_receives_full_claim_and_identified_historical_evidence():
@@ -89,9 +89,9 @@ def test_judge_status_requires_complete_metric_coverage(monkeypatch, records, ex
 def fixture_outputs(tmp_path):
     from fastapi.testclient import TestClient
 
-    from claims.api import create_app
-    from claims.demo import DEMO_CASES
-    from claims.models import ClaimInput, SearchFilters
+    from claims.api.main import create_app
+    from claims.core.demo_cases import DEMO_CASES
+    from claims.core.schemas import ClaimInput, SearchFilters
 
     settings = Settings(_env_file=None, claims_database_path=tmp_path / "eval.sqlite",
                         claims_data_path=tmp_path / "missing.json",
@@ -104,7 +104,7 @@ def fixture_outputs(tmp_path):
 
 
 def test_golden_fixture_contracts_pass_independent_validation(fixture_outputs):
-    from claims.demo import DEMO_CASES
+    from claims.core.demo_cases import DEMO_CASES
 
     settings, outputs = fixture_outputs
     assert all(all(golden_case_checks(demo, run, settings).values())
@@ -122,7 +122,7 @@ def test_golden_fixture_contracts_pass_independent_validation(fixture_outputs):
 def test_independent_checks_catch_false_passes(fixture_outputs, mutation, check):
     from copy import deepcopy
 
-    from claims.demo import DEMO_CASES
+    from claims.core.demo_cases import DEMO_CASES
 
     settings, outputs = fixture_outputs
     run = deepcopy(outputs[0])
@@ -150,7 +150,7 @@ def test_independent_checks_catch_false_passes(fixture_outputs, mutation, check)
 def test_unrelated_findings_do_not_satisfy_case_objectives(fixture_outputs, index, kind, text, check):
     from copy import deepcopy
 
-    from claims.demo import DEMO_CASES
+    from claims.core.demo_cases import DEMO_CASES
 
     settings, outputs = fixture_outputs
     run = deepcopy(outputs[index])
@@ -161,7 +161,7 @@ def test_unrelated_findings_do_not_satisfy_case_objectives(fixture_outputs, inde
 def test_document_gap_can_cite_procedure_with_claim_absence_in_separate_fact(fixture_outputs):
     from copy import deepcopy
 
-    from claims.demo import DEMO_CASES
+    from claims.core.demo_cases import DEMO_CASES
 
     settings, outputs = fixture_outputs
     run = deepcopy(outputs[1])
@@ -189,6 +189,15 @@ def test_case_exceptions_are_recorded_and_do_not_abort_suite():
     assert "private provider credential" not in str(report)
 
 
+@pytest.mark.parametrize(("stage_model", "independent"), [("", True), ("judge-x", False)])
+def test_the_deepeval_judge_is_independent_only_if_no_stage_writes_with_its_model(stage_model, independent):
+    settings = Settings(_env_file=None, deepeval_model="judge-x", llm_model="writer", llm_model_investigation=stage_model)
+    nothing_runs = SimpleNamespace(store=SimpleNamespace(event=lambda *args: None),
+                                   create=lambda claim, filters: (_ for _ in ()).throw(RuntimeError("not needed")))
+    report = EvaluationService(nothing_runs, settings).run()
+    assert report["judge_independent"] is independent
+
+
 def test_complete_execution_does_not_imply_judge_quality_pass(fixture_outputs, monkeypatch):
     settings, outputs = fixture_outputs
     settings = settings.model_copy(update={"deepeval_model": "same-author", "llm_model": "same-author"})
@@ -204,6 +213,37 @@ def test_complete_execution_does_not_imply_judge_quality_pass(fixture_outputs, m
     assert report["passed"] == 4 and report["judge_status"] == "completed"
     assert report["judge_passed_metrics"] == 11 and report["judge_quality_passed"] is False
     assert report["overall_passed"] is False and report["judge_independent"] is False
+
+
+def test_the_deepeval_judge_waits_as_long_as_the_judge_timeout_not_the_writer_timeout(fixture_outputs, monkeypatch):
+    metrics = pytest.importorskip("deepeval.metrics")
+    from claims.evaluation import service as evaluation_module
+
+    settings, outputs = fixture_outputs
+    settings = settings.model_copy(update={"deepeval_model": "judge-x", "llm_timeout_seconds": 60, "judge_timeout_seconds": 120})
+    timeouts = []
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def complete(self, messages, schema, **kwargs):
+            timeouts.append(kwargs.get("timeout"))
+            return "{}"
+
+    class Metric:
+        def __init__(self, *args, model, threshold, **kwargs):
+            self.model, self.threshold, self.__name__ = model, threshold, "stub"
+            self.score, self.reason = 1.0, "reason"
+
+        def measure(self, case):
+            self.model.generate("prompt")
+
+    monkeypatch.setattr(evaluation_module, "CompletionClient", Client)
+    for name in ("FaithfulnessMetric", "ContextualRelevancyMetric", "GEval"):
+        monkeypatch.setattr(metrics, name, Metric)
+    EvaluationService(SimpleNamespace(store=SimpleNamespace(event=lambda *args: None)), settings)._judge(outputs[:1])
+    assert timeouts == [120, 120, 120]
 
 
 def test_metric_failure_does_not_hide_other_metrics(fixture_outputs, monkeypatch):

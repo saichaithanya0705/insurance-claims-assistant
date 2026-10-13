@@ -6,14 +6,14 @@ import httpx
 import pytest
 from mcp.types import CallToolResult, TextContent, Tool
 
-from claims.adapters import (
-    FixtureSynaptAdapter,
+from claims.agents import access
+from claims.core.schemas import ClaimInput
+from claims.core.settings import Settings
+from claims.synapt.adapter import (
     LiveSynaptAdapter,
     SynaptError,
     build_synapt_adapter,
 )
-from claims.models import ClaimInput
-from claims.settings import Settings
 
 
 @pytest.fixture
@@ -64,6 +64,39 @@ def result(chunks):
     return CallToolResult(content=[], structuredContent={"chunks": chunks})
 
 
+def query_tool():
+    """`trident_query` with the live tenant's argument names (question, ticket_mode, tickets)."""
+    return Tool(
+        name="trident_query",
+        inputSchema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "provider_id": {"type": "string"},
+                "question": {"type": "string"},
+                "top_k": {"type": "integer"},
+                "ticket_mode": {"type": "string", "enum": ["auto", "off", "only"]},
+                "tickets": {"anyOf": [{"type": "array", "items": {"type": "object"}}, {"type": "null"}]},
+                "label_fields": {"anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}]},
+            },
+            "required": ["provider_id", "question"],
+        },
+    )
+
+
+def tickets_result(examples, provider="provider-1"):
+    """A ticket-only answer: per label value, the neighbour ticket that best supports it, as (ticket_id, score) pairs."""
+    fields = {
+        "resolution": {"labels": [
+            {"value": f"value-{i}", "confidence": 0.5, "example": {"ticket_id": ticket_id, "score": score}}
+            for i, (ticket_id, score) in enumerate(examples)
+        ]},
+    }
+    return CallToolResult(content=[], structuredContent={
+        "provider_id": provider, "answer": "see ticket_labels", "ticket_labels": [{"index": 0, "fields": fields}],
+    })
+
+
 def stub_session(monkeypatch, adapter, tools, response):
     calls = []
 
@@ -81,22 +114,6 @@ def stub_session(monkeypatch, adapter, tools, response):
 
     monkeypatch.setattr(adapter, "_session", session)
     return calls
-
-
-def test_fixture_is_explicit_and_does_not_invent_claim_facts(claim):
-    bundle = FixtureSynaptAdapter().retrieve(claim)
-    assert bundle.mode == "fixture"
-    assert all(e.provenance == "synthetic_fixture" for e in bundle.evidence)
-    assert "request an incident statement and repair estimate" in bundle.evidence[0].text
-    assert claim.description not in " ".join(e.text for e in bundle.evidence)
-    assert all(
-        key in bundle.evidence[1].text
-        for key in (
-            "damage assessment",
-            "inventory list",
-            "loss assessment",
-        )
-    )
 
 
 def test_live_retrieval_is_provider_scoped(monkeypatch, settings, claim):
@@ -117,20 +134,19 @@ def test_live_retrieval_is_provider_scoped(monkeypatch, settings, claim):
     assert bundle.evidence[0].provider_id == "provider-1"
     assert calls[0][0] == "trident_get_chunks"
     assert calls[0][1]["provider_id"] == "provider-1"
-    # One procedure query, then one claim-card query for semantic matching of similar cases.
-    assert len(calls) == 2
-    assert calls[1][1]["top_k"] == settings.synapt_case_top_k
-    assert calls[1][1]["query"].startswith("Historical claim card.")
+    # Only the procedure query: with no query tool the ticket store cannot be searched, and that is said.
+    assert len(calls) == 1
     assert bundle.semantic_claim_ids == []
+    assert "Synapt's ticket store cannot be searched: the query tool is unavailable." in bundle.warnings
 
 
 @pytest.mark.parametrize("claim_type", ["home", None])
 def test_procedure_query_uses_procedure_vocabulary_not_the_claim_narrative(
     monkeypatch, settings, claim, claim_type
 ):
-    """A narrative-bearing query embeds nearer to the ~20k claim cards than to any procedure, so the
-    top hits were cards (discarded) and some claims got no procedure. Measured against the live
-    provider: 8-9 of 10 hits were cards. The query must stay generic and free of the description."""
+    """When the provider held claim cards, a narrative-bearing query embedded nearer to them than to any procedure (8-9 of
+    10 hits were cards, measured live) and some claims got no procedure. The query stays generic and free of the
+    description, which may hold personal data."""
     adapter = LiveSynaptAdapter(settings)
     private = ClaimInput.model_validate(
         claim.model_dump(mode="json")
@@ -146,7 +162,6 @@ def test_procedure_query_uses_procedure_vocabulary_not_the_claim_narrative(
     assert "procedure" in procedure_query.lower()
     assert "flooded" not in procedure_query and "Dana" not in procedure_query
     assert ("home" in procedure_query) == (claim_type == "home")
-    assert calls[1][1]["query"].startswith("Historical claim card.")
 
 
 @pytest.mark.parametrize(
@@ -209,7 +224,7 @@ def test_authentication_encoding_and_redirects(monkeypatch, settings, encoding, 
                 json={"access_token": "opaque-token", "token_type": "Bearer"},
             )
 
-    monkeypatch.setattr("claims.adapters.httpx.AsyncClient", Client)
+    monkeypatch.setattr("claims.synapt.adapter.httpx.AsyncClient", Client)
     assert asyncio.run(LiveSynaptAdapter(settings)._authenticate()) == "opaque-token"
     body = observed[0]["data" if encoding == "form" else "json"]
     assert body == {identity_field: "test-user", "password": "very-secret-password"}
@@ -245,8 +260,8 @@ def test_sdk_authorization_header(monkeypatch, settings):
             pass
 
     monkeypatch.setattr(adapter, "_authenticate", auth)
-    monkeypatch.setattr("claims.adapters.streamablehttp_client", transport)
-    monkeypatch.setattr("claims.adapters.ClientSession", Session)
+    monkeypatch.setattr("claims.synapt.adapter.streamablehttp_client", transport)
+    monkeypatch.setattr("claims.synapt.adapter.ClientSession", Session)
     asyncio.run(run())
     assert observed["headers"] == {"Authorization": "Bearer test-token"}
     client = observed["httpx_client_factory"]()
@@ -317,9 +332,12 @@ def test_explicit_read_rejects_unknown_args_and_mutations(monkeypatch, settings)
     adapter = LiveSynaptAdapter(settings)
     calls = stub_session(monkeypatch, adapter, [tool()], result([]))
     with pytest.raises(SynaptError, match="not permitted"):
-        asyncio.run(adapter.call_read_tool("trident_ingest", {}))
+        access.run_as("ingestion", adapter.call_read_tool("trident_ingest", {}))  # holds the tool, but not through the read path
+    with pytest.raises(access.AccessDenied):
+        access.run_as("operator", adapter.call_read_tool("trident_ingest", {}))  # the operator does not hold it at all
     with pytest.raises(SynaptError, match="unsupported parameters"):
-        asyncio.run(
+        access.run_as(
+            "operator",
             adapter.call_read_tool(
                 "trident_get_chunks",
                 {
@@ -330,7 +348,8 @@ def test_explicit_read_rejects_unknown_args_and_mutations(monkeypatch, settings)
             )
         )
     with pytest.raises(SynaptError, match="configured provider"):
-        asyncio.run(
+        access.run_as(
+            "operator",
             adapter.call_read_tool(
                 "trident_get_chunks",
                 {
@@ -364,7 +383,7 @@ def test_ingest_is_explicit_and_submission_is_not_completion(monkeypatch, settin
         [ingest],
         CallToolResult(content=[], structuredContent={"req_id": "request-1"}),
     )
-    response = asyncio.run(adapter.ingest("Document text", "policy.txt"))
+    response = access.run_as("ingestion", adapter.ingest("Document text", "policy.txt"))
     assert response == {
         "status": "submitted",
         "req_id": "request-1",
@@ -396,7 +415,7 @@ def test_ingest_accepts_unrecognised_success_shape_but_rejects_errors(monkeypatc
         [ingest],
         CallToolResult(content=[], structuredContent={"accepted": True, "response": "queued"}),
     )
-    accepted = asyncio.run(adapter.ingest("Document text", "cards.txt"))
+    accepted = access.run_as("ingestion", adapter.ingest("Document text", "cards.txt"))
     assert accepted["req_id"] is None and accepted["response_keys"] == ["accepted", "response"]
     assert accepted["completion_verified"] is False
     failing = LiveSynaptAdapter(settings)
@@ -407,7 +426,7 @@ def test_ingest_accepts_unrecognised_success_shape_but_rejects_errors(monkeypatc
         CallToolResult(content=[], structuredContent={"error": "quota exceeded"}),
     )
     with pytest.raises(SynaptError, match="rejected"):
-        asyncio.run(failing.ingest("Document text", "cards.txt"))
+        access.run_as("ingestion", failing.ingest("Document text", "cards.txt"))
 
 
 def test_ingest_does_not_retry_ambiguous_failures(monkeypatch, settings):
@@ -423,7 +442,7 @@ def test_ingest_does_not_retry_ambiguous_failures(monkeypatch, settings):
 
     monkeypatch.setattr(adapter, "_session", session)
     with pytest.raises(SynaptError):
-        asyncio.run(adapter.ingest("Document text", "policy.txt"))
+        access.run_as("ingestion", adapter.ingest("Document text", "policy.txt"))
     assert count == 1
 
 
@@ -508,8 +527,10 @@ def test_retrieval_enriches_chunks_with_procedures_and_graph(monkeypatch, settin
         "trident_get_procedures",
         "trident_search",
     }
+    # The stub's query tool has an old schema (no `question`), so the ticket leg is refused before any call.
     assert bundle.warnings == [
-        "No ingested historical claim cards matched; semantic ranking was not applied."
+        "Synapt's ticket store was unavailable for this claim.",
+        "No similar past claims came back from the ticket store; semantic ranking was not applied.",
     ]
 
 
@@ -562,7 +583,7 @@ def test_ingestion_uses_advertised_snake_case_and_connector(monkeypatch, setting
         [ingest],
         CallToolResult(content=[], structuredContent={"req_id": "request-1"}),
     )
-    response = asyncio.run(adapter.ingest("Document content", "claims.txt"))
+    response = access.run_as("ingestion", adapter.ingest("Document content", "claims.txt"))
     assert response["completion_verified"] is False
     assert calls[0][1]["extraction_mode"] == "balanced"
     assert calls[0][1]["connector_type"] == "content"
@@ -570,50 +591,99 @@ def test_ingestion_uses_advertised_snake_case_and_connector(monkeypatch, setting
     assert "document_type" not in calls[0][1]
 
 
-def test_query_only_runs_when_no_source_evidence_available(monkeypatch, settings, claim):
+def test_the_passage_retriever_never_falls_back_to_the_query_agent_when_no_passage_comes_back(monkeypatch, settings, claim):
+    """Passage retrieval used to ask the query agent when the search came back empty. The query agent writes answers, not
+    evidence, and the Policy Passage Retriever does not hold that tool, so an empty search is now reported as empty. Its
+    only use of the query tool is the ticket-only leg, which asks no question and runs no model."""
     adapter = LiveSynaptAdapter(settings)
     calls = stub_session(
         monkeypatch,
         adapter,
-        [tool(), tool("trident_query")],
+        [tool(), query_tool()],
+        {"trident_get_chunks": result([]), "trident_query": tickets_result([])},
+    )
+    bundle = adapter.retrieve(claim)
+    assert bundle.evidence == [] and "Synapt returned no supporting evidence." in bundle.warnings
+    assert [name for name, _ in calls] == ["trident_get_chunks", "trident_query"]
+    assert calls[1][1]["ticket_mode"] == "only"
+
+
+def test_similar_past_claims_come_from_the_ticket_store_closest_first(monkeypatch, settings, claim):
+    adapter = LiveSynaptAdapter(settings)
+    sop = "For an auto claim request an incident statement and repair estimate."
+    calls = stub_session(
+        monkeypatch,
+        adapter,
+        [tool(), query_tool()],
         {
-            "trident_get_chunks": result([]),
-            "trident_query": result([{"source_id": "query-doc", "text": "Sourced passage"}]),
+            "trident_get_chunks": result([{"chunk_id": "chunk-sop", "text": sop}]),
+            "trident_query": tickets_result(
+                [("claimref_aaaaaaaade", 0.91), ("claimref_aaaaaaaabc", 0.99), ("claimref_aaaaaaaade", 0.95), ("not-an-alias", 1.0)]
+            ),
         },
     )
     bundle = adapter.retrieve(claim)
-    assert bundle.evidence[0].source_id == "query-doc"
-    assert [name for name, _ in calls] == [
-        "trident_get_chunks",
-        "trident_query",
-        "trident_get_chunks",  # claim-card query for semantic matching
-    ]
+    # Aliases decode to dataset claim IDs, closest first, each once; anything that is not an alias is dropped.
+    assert bundle.semantic_claim_ids == ["CLM-0000000012", "CLM-0000000034"]
+    assert [e.source_id for e in bundle.evidence] == ["chunk-sop"]
+    sent = calls[1][1]
+    assert sent["ticket_mode"] == "only" and sent["provider_id"] == "provider-1"
+    # The ticket is the claim in the uploaded columns' words: masking-safe, no state name, no description, no outcome.
+    (ticket,) = sent["tickets"]
+    assert set(ticket) == {"title", "description", "category", "region"}
+    assert ticket["category"] == "auto" and ticket["region"].startswith("regionkey_")
+    assert "Vehicle damage" not in str(ticket) and "California" not in str(ticket) and "CA" not in ticket["description"]
 
 
-def test_claim_cards_rank_similar_cases_but_are_never_cited_evidence(monkeypatch, settings, claim):
+def test_claim_cards_lessons_and_synapt_episodes_in_passages_are_never_cited_evidence(monkeypatch, settings, claim):
     adapter = LiveSynaptAdapter(settings)
     card = "claim_ref: claimref_aaaaaaaabc\nauto claim in region regionkey_ac. Amount band 5,000-10,000"
-    other = "claim_ref: claimref_aaaaaaaade\nauto claim in region regionkey_ag."
     lesson = "handler_lesson_ref: LESSON-1\nhandler_note: ask for the police report"
     sop = "For an auto claim request an incident statement and repair estimate."
+    # Synapt's episodic document, as the live tenant returns it from passage search.
+    episode = "## Page 1\n\n### lived\n\nThe agent was trying to determine the standard document-request workflow for an auto claim."
     stub_session(
         monkeypatch,
         adapter,
         [tool()],
         result(
             [
-                {"chunk_id": "chunk-card", "text": card + "\n" + other},
+                {"chunk_id": "chunk-card", "text": card},
                 {"chunk_id": "chunk-lesson", "text": lesson},
-                {"chunk_id": "chunk-sop", "text": sop},
+                {"chunk_id": "chunk-episode", "text": episode, "source_file": "es_provider-1", "doc_type": "episodic"},
+                {"chunk_id": "chunk-sop", "text": sop, "doc_type": "sop"},
             ]
         ),
     )
     bundle = adapter.retrieve(claim)
-    # Cards -> semantic ranking in order of appearance (aliases decode to dataset claim IDs).
-    assert bundle.semantic_claim_ids == ["CLM-0000000012", "CLM-0000000034"]
-    # Cards and lessons are not cited as sources; the procedure passage is.
     assert [e.source_id for e in bundle.evidence] == ["chunk-sop"]
-    assert not any("claim_ref" in w for w in bundle.warnings)
+    assert bundle.semantic_claim_ids == []
+
+
+@pytest.mark.parametrize(
+    ("response", "warning"),
+    [
+        (
+            CallToolResult(content=[], structuredContent={"provider_id": "provider-1", "ticket_labels": [],
+                                                          "stores_skipped": {"ticket": "no_ticket_store"}}),
+            "The provider has no usable ticket store (no_ticket_store).",
+        ),
+        (tickets_result([("claimref_aaaaaaaabc", 0.9)], provider="someone-else"), "Synapt's ticket store was unavailable for this claim."),
+        (CallToolResult(content=[], isError=True), "Synapt's ticket store was unavailable for this claim."),
+    ],
+)
+def test_a_missing_or_foreign_ticket_store_gives_no_similar_claims_and_says_why(monkeypatch, settings, claim, response, warning):
+    adapter = LiveSynaptAdapter(settings)
+    stub_session(
+        monkeypatch,
+        adapter,
+        [tool(), query_tool()],
+        {"trident_get_chunks": result([{"chunk_id": "sop", "text": "Request photos."}]), "trident_query": response},
+    )
+    bundle = adapter.retrieve(claim)
+    assert bundle.semantic_claim_ids == []
+    assert [e.source_id for e in bundle.evidence] == ["sop"]
+    assert warning in bundle.warnings
 
 
 def test_beta_result_wrapper_preserves_chunk_identity(settings):
@@ -732,7 +802,7 @@ def test_authentication_records_the_servers_stated_lifetime(settings):
     real = httpx.AsyncClient
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
-            "claims.adapters.httpx.AsyncClient",
+            "claims.synapt.adapter.httpx.AsyncClient",
             lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
         )
         assert asyncio.run(adapter._authenticate()) == "opaque"
@@ -761,7 +831,7 @@ def test_rate_limited_logins_wait_as_the_server_asks(monkeypatch, settings):
     async def fake_sleep(seconds):
         delays.append(seconds)
 
-    monkeypatch.setattr("claims.adapters.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("claims.synapt.adapter.asyncio.sleep", fake_sleep)
 
     async def operation():
         failure = next(outcomes)

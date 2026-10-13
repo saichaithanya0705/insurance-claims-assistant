@@ -1,6 +1,11 @@
 # Live NVIDIA NIM validation — 2026-10-05
 
 > **Historical record.** Written before the full-dataset work of 2026-10-06. Commands, test counts and conclusions here may be out of date. Current status: [VALIDATION.md](VALIDATION.md); Synapt: [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md).
+>
+> **Superseded.** This run used a fixture stand-in for Synapt. The application no longer has one:
+> Synapt is always required, so `scripts/test_live_nim.py` (which needed fixture Synapt) was removed.
+> The current end-to-end live evidence, with live Synapt and live NVIDIA, is
+> [LIVE_PROJECT_EVALUATION.md](LIVE_PROJECT_EVALUATION.md).
 
 The application used real NVIDIA hosted inference with the supplied key held only in the ignored
 local `.env`. Synapt remained in `fixture` mode throughout: no live authentication, ingestion,

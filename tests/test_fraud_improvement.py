@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from sklearn.metrics import f1_score
 
-from claims.analytics import (
+from claims.ml.analytics import (
     AnalyticsService,
     fraud_classification_metrics,
     fraud_operating_points,

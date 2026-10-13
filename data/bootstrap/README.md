@@ -8,7 +8,7 @@ Legacy cases without an owner are visible only to administrators. Regenerate it 
 `uv run python scripts/snapshot_local_databases.py` when another handoff is requested.
 
 `auth.sqlite` is an empty, credential-free schema committed for local setup.
-`src/claims/auth_schema.sql` is the canonical schema; regenerate the template with
+`src/claims/api/auth_schema.sql` is the canonical schema; regenerate the template with
 `uv run python scripts/create_auth_template.py`.
 
 The application initializes its separate working account database next to the

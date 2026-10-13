@@ -1,9 +1,11 @@
 import { motion } from 'motion/react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookmarkPlus, BrainCircuit, Check, FlaskConical, Lightbulb, Loader2, Play, RefreshCw, Star, X } from 'lucide-react'
 import { api, post, type EvaluationStatus, type Lessons, type ModelStatus, type TaskMetric } from '../lib/api'
 import { label, money, num, pct } from '../lib/format'
 import { Bar, Card, DataView, ErrorBox, Pill, Ring, itemVariants, listVariants, useToast } from './ui'
+import { EvaluationProgressPanel, EvaluationVerdict, judgeSummary } from './EvaluationPanels'
+import { ModelComparison } from './ModelComparison'
 
 const TASKS: { key: 'amount' | 'resolution' | 'fraud'; title: string }[] = [
   { key: 'amount', title: 'Claim amount' },
@@ -80,6 +82,7 @@ function TaskCard({ task, title, metric }: { task: string; title: string; metric
           <p style={{ fontSize: 12, color: 'var(--text-3)' }}>{metric.interval_label}</p>
         </div>
       )}
+      <ModelComparison task={task} metric={metric} />
       {metric.counts && (
         <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 10, fontFamily: 'var(--font-mono)' }}>
           {Object.entries(metric.counts)
@@ -115,6 +118,31 @@ export function QualityView() {
   const [busy, setBusy] = useState<null | 'train' | 'eval' | 'refresh'>(null)
   const [judge, setJudge] = useState(false)
   const [promoting, setPromoting] = useState<number | null>(null)
+  const running = evals?.progress?.state === 'running'
+  const wasRunning = useRef(false)
+
+  // An evaluation runs in the background on the server; poll it so the page shows what is happening.
+  useEffect(() => {
+    if (!running) return
+    const poll = setInterval(async () => {
+      try {
+        const next = await api<EvaluationStatus>('/api/evaluations/status')
+        // Keep the same object when nothing changed, so an idle poll does not re-render the whole page.
+        setEvals((previous) => (previous && JSON.stringify(previous) === JSON.stringify(next) ? previous : next))
+      } catch {
+        /* the next tick tries again */
+      }
+    }, 2000)
+    return () => clearInterval(poll)
+  }, [running])
+
+  useEffect(() => {
+    if (wasRunning.current && !running && evals) {
+      const failed = evals.progress?.state === 'failed'
+      toast(failed ? 'The evaluation stopped early. See the activity log.' : evals.overall_passed ? 'Evaluation finished: passed.' : 'Evaluation finished: not passed. See the verdict and the judge scores.', evals.overall_passed ? 'ok' : 'info')
+    }
+    wasRunning.current = running
+  }, [running, evals, toast])
 
   const refresh = useCallback(async () => {
     setError(null)
@@ -150,12 +178,10 @@ export function QualityView() {
     setBusy('eval')
     setError(null)
     try {
-      // Golden cases run live and the LLM judge adds three metrics per case: several minutes in total.
-      const result = await post<EvaluationStatus>('/api/evaluations/run', { judge }, { timeoutMs: 30 * 60_000 })
-      setEvals(result)
-      toast('Evaluation returned. Review the checks and judge status.')
+      // Started in the background: golden cases run live and the judge adds three metrics per case, which
+      // takes minutes. The page polls for progress instead of waiting on one long request.
+      setEvals(await post<EvaluationStatus>('/api/evaluations/run', { judge, background: true }))
     } catch (e) {
-      // The server keeps running after a dropped request, so show whatever it has finished.
       await refresh()
       setError((e as Error).message)
     } finally {
@@ -270,12 +296,12 @@ export function QualityView() {
               </span>
               Investigation evaluations
             </h2>
-            {evals && <Pill tone={evals.overall_passed === true ? 'teal' : evals.status === 'completed' ? 'amber' : undefined}>{evals.overall_passed === true ? 'Checks passed' : evals.status === 'completed' ? 'Review results' : label(evals.status)}</Pill>}
+            {evals && <Pill tone={running ? 'sky' : evals.overall_passed === true ? 'teal' : evals.status === 'completed' ? 'amber' : undefined}>{running ? 'Running' : evals.overall_passed === true ? 'Overall: passed' : evals.status === 'completed' ? 'Overall: not passed' : label(evals.status)}</Pill>}
           </div>
           <div className="card-body">
             <div className="actions-row">
-              <button className="btn primary" onClick={evaluate} disabled={busy !== null}>
-                {busy === 'eval' ? <Loader2 size={15} className="spin" /> : <Play size={15} />} Run evaluations
+              <button className="btn primary" onClick={evaluate} disabled={busy !== null || running}>
+                {busy === 'eval' || running ? <Loader2 size={15} className="spin" /> : <Play size={15} />} {running ? 'Running…' : 'Run evaluations'}
               </button>
               <label className="switch">
                 <input type="checkbox" checked={judge} onChange={(e) => setJudge(e.target.checked)} />
@@ -287,10 +313,13 @@ export function QualityView() {
             </div>
             {!evals ? (
               <div className="skeleton" style={{ height: 160 }} />
+            ) : running && evals.progress ? (
+              <EvaluationProgressPanel progress={evals.progress} />
             ) : evals.status !== 'completed' ? (
               <div className="small-empty">Evaluations have not run in this server session. Run them to execute the golden demo cases.</div>
             ) : (
               <>
+                <EvaluationVerdict evals={evals} />
                 <div className="ring-wrap">
                   <div style={{ position: 'relative', width: 92, height: 92 }}>
                     <Ring value={passRatio} tone={passRatio === 1 ? 'teal' : passRatio > 0.5 ? 'amber' : 'rose'} />
@@ -326,7 +355,7 @@ export function QualityView() {
                 <div style={{ marginTop: 16 }}>
                   <div className="section-title">
                     <h3>LLM judge</h3>
-                    <Pill tone={evals.judge_quality_passed === true ? 'teal' : evals.judge_status === 'not_run' ? undefined : 'amber'}>{evals.judge_quality_passed === true ? 'Quality checks passed' : label(evals.judge_status)}</Pill>
+                    <Pill tone={judgeSummary(evals).tone}>{judgeSummary(evals).text}</Pill>
                   </div>
                   {evals.judge_expected_metrics !== undefined && <p className="footnote">{evals.judge_completed_metrics ?? 0}/{evals.judge_expected_metrics} metrics completed · {evals.judge_passed_metrics ?? 0} passed. Completion reports execution; individual scores determine quality.</p>}
                   {!!evals.judge_results?.length && (
@@ -342,6 +371,14 @@ export function QualityView() {
                   )}
                 </div>
                 {evals.scope && <p className="footnote">{evals.scope}</p>}
+                {!!evals.progress?.events?.length && (
+                  <details className="disclose">
+                    <summary>What happened in this run</summary>
+                    <div className="disclose-body">
+                      <EvaluationProgressPanel progress={evals.progress} />
+                    </div>
+                  </details>
+                )}
               </>
             )}
           </div>

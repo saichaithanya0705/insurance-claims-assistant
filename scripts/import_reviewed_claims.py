@@ -15,9 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from claims.fraud_features import file_digest, rows_digest
-from claims.reviewed_claims import reviewed_records
-from claims.richer_data import parse_csv, production_blockers, write_parquet
+from claims.ml.fraud_features import file_digest, rows_digest
+from claims.ml.reviewed_claims import reviewed_records
+from claims.ml.richer_data import parse_csv, production_blockers, write_parquet
 
 
 def import_reviewed(csv_path, evidence_path, output, source_id, source_url, license_name, domain):

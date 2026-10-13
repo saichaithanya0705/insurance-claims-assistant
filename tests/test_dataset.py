@@ -5,11 +5,17 @@ from datetime import date
 import duckdb
 import pytest
 
-from claims.cards import claim_alias
-from claims.corpus import batch_header, build_corpus, make_batches, render_card, select_cards
-from claims.dataset import ClaimsStore
-from claims.models import ClaimInput, SearchFilters
-from claims.retrieval import HistoricalRetriever
+from claims.core.schemas import ClaimInput, SearchFilters
+from claims.corpus.builder import (
+    batch_header,
+    build_corpus,
+    make_batches,
+    render_card,
+    select_cards,
+)
+from claims.corpus.cards import claim_alias
+from claims.history.dataset import ClaimsStore
+from claims.history.retriever import HistoricalRetriever
 
 TYPES = ("auto", "home", "renters", "property", "business")
 
@@ -236,7 +242,7 @@ def test_render_card_uses_masking_safe_alias_and_state():
 
 
 def test_training_samples_the_parquet_and_records_provenance(parquet, tmp_path):
-    from claims.analytics import AnalyticsService
+    from claims.ml.analytics import AnalyticsService
 
     service = AnalyticsService(
         tmp_path / "absent.json", tmp_path / "models", parquet, train_rows=2500
@@ -270,7 +276,7 @@ def test_semantic_matches_follow_the_type_pool_and_cannot_displace_strong_matche
     assert [c["claim_id"] for c in fused[:5]] == base
     # ...but it is still shown, clearly labelled as related in meaning rather than closest.
     assert fused[5]["claim_id"] == weakest and fused[5]["surfaced_by"] == "semantic"
-    assert fused[5]["semantic_rank"] == 1 and any("Synapt ranked" in r for r in fused[5]["match_reasons"])
+    assert fused[5]["semantic_rank"] == 1 and any("ticket store ranked" in r for r in fused[5]["match_reasons"])
     assert all(c["surfaced_by"] == "fusion" for c in fused[:5])
     # A mid-ranked candidate that Synapt also ranks first is lifted and labelled with its rank.
     target = [c["claim_id"] for c in retriever.search(new, SearchFilters(), top_k=20)][12]

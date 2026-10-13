@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from claims.api import create_app
-from claims.demo import DEMO_CASES
-from claims.settings import Settings
+from claims.api.main import create_app
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.settings import Settings
 
 
 @pytest.mark.parametrize("text", [
@@ -17,7 +17,7 @@ from claims.settings import Settings
     "The repair estimate was received with the police report not provided.",
 ])
 def test_document_receipt_guard_handles_both_orders_and_unrelated_qualifiers(text):
-    from claims.workflow import asserts_document_receipt
+    from claims.investigation.workflow import asserts_document_receipt
 
     assert asserts_document_receipt(text) is True
 
@@ -32,7 +32,7 @@ def test_document_receipt_guard_handles_both_orders_and_unrelated_qualifiers(tex
     "Document receipt is unverified.",
 ])
 def test_document_receipt_guard_keeps_local_reported_and_negated_statements(text):
-    from claims.workflow import asserts_document_receipt
+    from claims.investigation.workflow import asserts_document_receipt
 
     assert asserts_document_receipt(text) is False
 

@@ -23,16 +23,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from claims.adapters import LiveSynaptAdapter, SynaptError
-from claims.cards import (
+from claims.agents import access
+from claims.core.settings import Settings
+from claims.corpus.cards import (
     amount_band,
+    card_ids_in_text,
     claim_card_text,
-    claim_ids_in_text,
     history_band,
     is_card_chunk,
 )
-from claims.dataset import ClaimsStore
-from claims.settings import Settings
+from claims.history.dataset import ClaimsStore
+from claims.synapt.adapter import LiveSynaptAdapter, SynaptError
 
 
 def read_ledger(path: Path) -> dict:
@@ -75,9 +76,10 @@ async def ingest(args, settings, adapter):
     ledger_path = corpus / "ledger.jsonl"
     done = read_ledger(ledger_path)
     work = []
-    if args.procedures:
+    if args.procedures or args.procedures_only:
         work += [(p, None) for p in manifest["procedures"]]
-    work += [(b["path"], b["sha256"]) for b in manifest["batches"]]
+    if not args.procedures_only:
+        work += [(b["path"], b["sha256"]) for b in manifest["batches"]]
     pending = [(p, sha) for p, sha in work if p not in done]
     if args.max_batches:
         pending = pending[: args.max_batches]
@@ -149,7 +151,8 @@ async def verify(args, settings, adapter):
     is deliberately not tested: many cards share identical descriptors.
     """
     corpus = args.corpus
-    ledger = read_ledger(corpus / "ledger.jsonl")
+    # Base corpora log to ledger.jsonl, marker-headed corpora to upload-ledger.jsonl.
+    ledger = read_ledger(corpus / "ledger.jsonl") | read_ledger(corpus / "upload-ledger.jsonl")
     manifest = json.loads((corpus / "manifest.json").read_text(encoding="utf-8"))
     ids = [i for b in manifest["batches"] if b["path"] in ledger for i in b["claim_ids"]]
     if not ids:
@@ -194,7 +197,7 @@ async def verify(args, settings, adapter):
                     cid
                     for c in chunks
                     if is_card_chunk(c.get("text") or "")
-                    for cid in claim_ids_in_text(c["text"])
+                    for cid in card_ids_in_text(c["text"])
                 )
             )
             matched = [corpus_rows[cid] for cid in returned if cid in corpus_rows]
@@ -221,8 +224,6 @@ async def verify(args, settings, adapter):
 
 async def main(args):
     settings = Settings()
-    if settings.synapt_mode != "live":
-        raise SystemExit("Set SYNAPT_MODE=live (and credentials/provider) in .env first.")
     adapter = LiveSynaptAdapter(settings)
     if args.command == "status":
         current = await stats(adapter, settings.synapt_provider_id)
@@ -241,6 +242,9 @@ if __name__ == "__main__":
     parser.add_argument("--corpus", type=Path, default=Path("artifacts/synapt/corpus-v3"))
     parser.add_argument("--max-batches", type=int, default=0, help="0 = all remaining")
     parser.add_argument("--procedures", action="store_true", help="also upload the 5 procedures")
+    parser.add_argument("--procedures-only", action="store_true",
+                        help="upload only the procedures (cards of a marker-headed corpus go through "
+                             "ingest_expanded_cards.py)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="upload even if cards already exist")
     parser.add_argument("--wait", type=float, default=300, help="seconds to wait per batch")
@@ -252,6 +256,6 @@ if __name__ == "__main__":
         "--parquet", type=Path, default=Path("data/raw/parquet/insurance_claims_100M.parquet")
     )
     try:
-        asyncio.run(main(parser.parse_args()))
+        access.run_as("ingestion", main(parser.parse_args()))
     except SynaptError as exc:
         raise SystemExit(str(exc)) from None

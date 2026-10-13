@@ -2,10 +2,11 @@ import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { ChevronRight, Eye, ShieldCheck } from 'lucide-react'
 import { api } from '../lib/api'
-import { label, money, shortTitle } from '../lib/format'
+import { countWord, label, money, shortTitle } from '../lib/format'
 import { Card, ErrorBox, Pill } from './ui'
 import { CaseSearch } from './CaseSearch'
 import { ExplanationView } from './ExplanationView'
+import { RunAgents } from './AgentsView'
 import { Pipeline, type NodeState, STAGES } from './Pipeline'
 
 interface RecentItem {
@@ -43,7 +44,7 @@ function Overview() {
         </div>
         <div className="card-body">
           <Pipeline states={NEUTRAL} />
-          <p className="section-desc">The same eight stages run for every query. Pick a query above to see what each stage did for it, which sources stand behind each statement, and how the result was checked.</p>
+          <p className="section-desc">The same {countWord(STAGES.length)} stages run for every query. Pick a query above to see what each stage did for it, which sources stand behind each statement, and how the result was checked.</p>
           <ul className="xp-who">
             {WHO.map((w) => (
               <li key={w.name}>
@@ -134,6 +135,7 @@ export function ExplainabilityView({ admin, runId, onSelect, onOpenTrace }: { ad
       )}
 
       {runId ? <ExplanationView key={runId} runId={runId} admin={admin} onOpenTrace={admin ? onOpenTrace : undefined} /> : <Overview />}
+      {runId && <RunAgents key={`agents-${runId}`} runId={runId} admin={admin} />}
       {runId && (
         <p className="footnote">
           <ChevronRight size={12} style={{ verticalAlign: '-2px' }} /> This explanation is built from what was saved with the brief. No model is called and no search is repeated; only the validation rules are recomputed, to confirm the saved verdict. Anything that was not recorded is marked as such.

@@ -187,7 +187,7 @@ new independent tests and cannot repair missing evidence or observation timestam
 uv run python scripts/prepare_richer_claims.py
 uv run python scripts/train_richer_fraud.py --verify-only
 uv run pytest -q
-uv run ruff check src/claims/richer_data.py src/claims/richer_fraud.py src/claims/reviewed_claims.py scripts/prepare_richer_claims.py scripts/train_richer_fraud.py scripts/import_reviewed_claims.py tests/test_richer_claims.py
+uv run ruff check src/claims/ml/richer_data.py src/claims/ml/richer_fraud.py src/claims/ml/reviewed_claims.py scripts/prepare_richer_claims.py scripts/train_richer_fraud.py scripts/import_reviewed_claims.py tests/test_richer_claims.py
 ```
 
 Focused validation: **15 tests pass**, including source-label mutation, exact/ambiguous duplicates,

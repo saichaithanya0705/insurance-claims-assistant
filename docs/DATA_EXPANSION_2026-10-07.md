@@ -1,5 +1,7 @@
 # Claim-card expansion and provider audit — 7 October 2026
 
+> Note (13 October 2026): the application stopped using the provider described here on 9 October, and since 13 October it keeps no claim cards in Synapt at all; past claims are now in Synapt's ticket store. See [SYNAPT_INTEGRATION.md](SYNAPT_INTEGRATION.md#how-the-data-is-split-across-synapt-corrected-13-october-2026).
+
 ## What I did
 
 Read the supplied insurance-assistant PDF, `PROJECT_PLAN.md`, the completed architecture and panel

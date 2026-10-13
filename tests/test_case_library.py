@@ -2,10 +2,10 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from claims.api import create_app
-from claims.settings import Settings
-from claims.store import Store
-from claims.workflow import validate_brief
+from claims.api.main import create_app
+from claims.core.settings import Settings
+from claims.investigation.workflow import validate_brief
+from claims.storage.run_store import Store
 
 
 def save(store, run_id, description, status="awaiting_review", amount=8500, filed="2026-09-10"):

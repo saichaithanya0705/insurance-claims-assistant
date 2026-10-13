@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from claims.judge import PASS_SCORE, JudgeVerdict, LLMJudge
-from claims.llm import CompletionError
-from claims.settings import Settings
+from claims.core.settings import Settings
+from claims.evaluation.judge import PASS_SCORE, JudgeVerdict, LLMJudge
+from claims.llm.client import CompletionError
 
 STATE = {
     "claim": {"description": "Rear-ended at a junction", "claim_amount": 8500},
@@ -62,7 +62,7 @@ def calls(monkeypatch):
         )
         return seen.result["value"]
 
-    monkeypatch.setattr("claims.judge.CompletionClient.complete", complete)
+    monkeypatch.setattr("claims.evaluation.judge.CompletionClient.complete", complete)
     return seen
 
 
@@ -115,7 +115,7 @@ def test_provider_failure_is_reported_without_details_and_does_not_raise(monkeyp
     def broken(self, *args, **kwargs):
         raise CompletionError("secret-detail-from-provider")
 
-    monkeypatch.setattr("claims.judge.CompletionClient.complete", broken)
+    monkeypatch.setattr("claims.evaluation.judge.CompletionClient.complete", broken)
     result = LLMJudge(settings(), lambda *a: None).evaluate(STATE, "run")
     assert result["status"] == "failed" and "secret-detail" not in json.dumps(result)
 
@@ -158,7 +158,7 @@ def test_invalid_brief_is_not_sent_to_judge(calls, mutation):
 def test_oversize_context_fails_visibly_instead_of_truncating(calls):
     from copy import deepcopy
 
-    from claims.judge import MAX_EVIDENCE_CHARS
+    from claims.evaluation.judge import MAX_EVIDENCE_CHARS
 
     state = deepcopy(STATE)
     state["evidence"][0]["text"] = "x" * (MAX_EVIDENCE_CHARS + 1)
@@ -188,8 +188,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from claims.api import create_app
-from claims.demo import DEMO_CASES
+from claims.api.main import create_app
+from claims.core.demo_cases import DEMO_CASES
 
 
 class FakeJudge:

@@ -1,4 +1,5 @@
 import type { Trace, TraceSpan } from './api'
+import { label } from './format'
 
 /** 0.4 ms -> "<1 ms", 850 -> "850 ms", 1530 -> "1.53 s", 74 000 -> "1 m 14 s". */
 export const formatDuration = (ms: number | null | undefined): string => {
@@ -46,6 +47,7 @@ const SPAN_LABELS: Record<string, string> = {
   recommend: 'Recommend next steps',
   validate: 'Validate the brief',
   judge: 'Independent review',
+  judge_metric: 'Evaluation judge',
   review: 'Handler review',
   'knowledge.retrieve': 'Fetch handling procedures',
   'synapt.retrieve': 'Synapt retrieval (with retries)',
@@ -142,4 +144,20 @@ export const PURPOSE_LABEL: Record<string, string> = {
   recommendation: 'Recommendation',
   judge: 'Independent review',
   completion: 'Completion',
+}
+
+/** A plain word and a tone for an evaluation judge's status, however long the stored message is. */
+const JUDGE_WORDS: Record<string, [string, string]> = {
+  completed: ['Completed', 'teal'],
+  partial: ['Partly completed', 'amber'],
+  failed: ['Failed', 'rose'],
+  unavailable: ['Unavailable', 'rose'],
+  no_outputs: ['No outputs', 'amber'],
+  not_run: ['Not run', 'violet'],
+}
+
+export function judgeWord(status: string | null | undefined, requested: boolean): [string, string] {
+  if (!requested) return ['Not selected', 'violet']
+  const key = String(status ?? 'not_run').split(':')[0].trim()
+  return JUDGE_WORDS[key] ?? [label(key), 'amber']
 }

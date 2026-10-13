@@ -7,13 +7,14 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from claims import explain, priority
-from claims.api import create_app
-from claims.demo import DEMO_CASES
-from claims.judge import PASS_SCORE
-from claims.models import ClaimInput
-from claims.settings import Settings
-from claims.workflow import VALIDATION_CHECKS, validate_brief
+from claims.api.main import create_app
+from claims.core.demo_cases import DEMO_CASES
+from claims.core.schemas import ClaimInput
+from claims.core.settings import Settings
+from claims.evaluation.judge import PASS_SCORE
+from claims.investigation import priority
+from claims.investigation.workflow import VALIDATION_CHECKS, validate_brief
+from claims.observability import explain
 
 
 @pytest.fixture
@@ -46,7 +47,7 @@ def test_the_pipeline_walks_every_stage_with_its_method_and_outputs(explained):
     # Fixture mode: rules write the brief, a person gates it, models only estimate.
     assert kinds == {
         "classify": "rules", "retrieve": "search", "investigate": "rules", "risk": "statistics",
-        "recommend": "rules", "validate": "rules", "judge": "off", "review": "human",
+        "recommend": "rules", "validate": "rules", "supervise": "off", "judge": "off", "review": "human",
     }
     assert admin["generation"] == "rules"
     retrieve = next(s for s in admin["pipeline"] if s["stage"] == "retrieve")

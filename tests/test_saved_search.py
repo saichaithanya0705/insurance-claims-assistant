@@ -3,10 +3,10 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from claims.api import create_app
-from claims.saved_search import SavedCaseSearch
-from claims.settings import Settings
-from claims.store import Store
+from claims.api.main import create_app
+from claims.core.settings import Settings
+from claims.storage.run_store import Store
+from claims.storage.saved_search import SavedCaseSearch
 
 
 def record(store, run_id, text, owner=None, title=None):

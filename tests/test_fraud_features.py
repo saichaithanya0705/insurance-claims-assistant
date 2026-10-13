@@ -8,8 +8,8 @@ import joblib
 import numpy as np
 import pytest
 
-from claims.analytics import feature_dict
-from claims.fraud_features import (
+from claims.ml.analytics import feature_dict
+from claims.ml.fraud_features import (
     FraudFeatureEncoder,
     FraudProbabilityEnsemble,
     file_digest,
