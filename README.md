@@ -87,3 +87,9 @@ licensed CC BY-NC 4.0 (non-commercial, attribution required). The service is a s
 application: SQLite, per-run ownership, CSRF and role checks are implemented; password reset, MFA
 and multi-tenant isolation are not. Do not load model artifacts from untrusted sources (joblib is
 executable).
+
+## License
+
+The code and documentation are released under the [MIT License](LICENSE). The data, fonts and dependencies keep
+their own terms, listed in [NOTICE.md](NOTICE.md). In particular, everything derived from the ZiadataLabs claims
+dataset is **CC BY-NC 4.0 (non-commercial)**.
