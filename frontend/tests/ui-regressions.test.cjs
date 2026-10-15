@@ -395,3 +395,13 @@ test('the evaluation runs tab is wired into Observability and its styles are pre
   assert.match(block, /@media \(max-width: 640px\)\s*\{\s*\.evalruns-metrics thead\s*\{\s*display: none;\s*\}/)
   assert.match(block, /content: attr\(data-label\)/)
 })
+test('the agent access matrix scroller contains its hidden labels, so the page cannot be stretched sideways on a phone', () => {
+  const css = fs.readFileSync(require('node:path').join(__dirname, '../src/index.css'), 'utf8')
+  // The table holds one absolutely positioned .sr-only label per cell. They are clipped by the scroller only when
+  // the scroller itself is positioned; otherwise they anchor to the outer card and widen the whole page.
+  assert.match(css, /^\.sr-only\s*\{[^}]*position:\s*absolute/m)
+  const scroller = css.match(/^\.agent-matrix-scroll\s*\{([^}]*)\}/m)
+  assert.ok(scroller, 'the .agent-matrix-scroll rule exists')
+  assert.match(scroller[1], /position:\s*relative/)
+  assert.match(scroller[1], /overflow-x:\s*auto/)
+})
