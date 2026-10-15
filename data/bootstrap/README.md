@@ -18,5 +18,4 @@ password. Use **Accounts** as an administrator to create user or admin credentia
 
 Working databases, password hashes, sessions and model caches are ignored by Git.
 The committed `auth.sqlite` template deliberately contains no usable login credentials.
-`.env` is the exception: it is tracked because this is a private repository the owner
-syncs between their own machines (see `docs/SETUP.md`).
+`.env` (credentials) is not in Git either: create it from `.env.example` (see `docs/SETUP.md`).

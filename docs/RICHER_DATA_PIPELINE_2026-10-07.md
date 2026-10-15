@@ -33,7 +33,11 @@ were preserved for audit rather than pooled into the active claims dataset or Sy
   74,210 bytes; SHA256 `4a05bfe950eb5658e0d889a78fe27a00a7225fd5ad2628dfa83e609eff4f6d2d`.
 - Original Kaggle staging: `data/processed/ml/richer/kaggle_claims_2026_v1/original_records.parquet`,
   1,535,139 bytes; SHA256 `8bed18ae8cce26f738ac9a96f96cc3122ad4eed793e4e8ecc2b571778753becc`.
-- Each source directory retains the original download and a JSON manifest/audit. The Mendeley
+  These Kaggle files are **not in this repository**: the dataset's licence is only a publisher claim (see above), so
+  they are not redistributed. `scripts/prepare_richer_claims.py` tries to download and audit them again (Kaggle may
+  require a signed-in download; the script then skips this step, and no model uses the data); only the JSON audit
+  files are kept in Git.
+- The Mendeley source directory retains the original download and a JSON manifest/audit. The Mendeley
   manifest records source attribution, excluded fields, missing values, original label counts,
   file/record digests and production blockers. Its 1,000 accepted records have unique claim IDs;
   no duplicates, conflicting claims or invalid rows were found.

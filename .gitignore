@@ -1,6 +1,6 @@
 .venv/
-# .env is deliberately tracked: this is a private repository the owner syncs between
-# their own machines. If the repository ever becomes public, untrack it and rotate keys.
+# Credentials and machine-local settings: never commit. Create .env from .env.example (docs/SETUP.md).
+.env
 __pycache__/
 .pytest_cache/
 .ruff_cache/
@@ -23,3 +23,10 @@ docs/private/
 data/derived/
 
 .env.local
+
+# Third-party Kaggle data whose licence could not be verified (the page says MIT; the archive has no LICENSE file).
+# It is not redistributed here; scripts/prepare_richer_claims.py tries to fetch and audit it again.
+data/processed/ml/richer/kaggle_claims_2026_v1/original.zip
+data/processed/ml/richer/kaggle_claims_2026_v1/insurance_claims_dataset.csv
+data/processed/ml/richer/kaggle_claims_2026_v1/original_records.parquet
+data/processed/ml/richer/kaggle_claims_2026_v1/data_dictionary.csv

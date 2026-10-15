@@ -137,7 +137,10 @@ def prepare_mendeley(client, output):
 
 def audit_kaggle(client, output):
     output.mkdir(parents=True, exist_ok=True)
-    if (output / "audit.json").exists():
+    # The raw Kaggle files are not kept in Git (licence unverified), so a clone has audit.json but not the files:
+    # reuse the audit only when the staged files are really here, otherwise download and audit again.
+    staged = ("original.zip", "insurance_claims_dataset.csv", "original_records.parquet")
+    if (output / "audit.json").exists() and all((output / name).exists() for name in staged):
         report = json.loads((output / "audit.json").read_text(encoding="utf-8"))
         for filename, key in (
             ("original.zip", "archive_sha256"),
@@ -218,7 +221,13 @@ def main():
             ),
             flush=True,
         )
-        kaggle = audit_kaggle(client, args.output / KAGGLE_ID)
+        try:
+            kaggle = audit_kaggle(client, args.output / KAGGLE_ID)
+        except httpx.HTTPError as exc:
+            # The Kaggle data is audit-only: no model or evidence corpus uses it, so a failed download is not fatal.
+            note = f"Kaggle download failed ({type(exc).__name__}); it may need a signed-in download. No model uses this data."
+            print(json.dumps({"source": KAGGLE_ID, "skipped": note}), flush=True)
+            return
         print(
             json.dumps(
                 {

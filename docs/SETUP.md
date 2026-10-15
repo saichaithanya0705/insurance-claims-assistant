@@ -34,16 +34,16 @@ library used by the saved-case search box. Both are optional but recommended.
 
 ## 2. Configure
 
-This private repository **tracks `.env`**, so a clone already contains the live configuration and
-credentials and needs no editing. Only if `.env` is missing, start from the template:
+`.env` holds credentials, so it is **not in Git** (it is git-ignored). Create it from the template
+and fill in your own values:
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-All paths in `.env` are relative to the repository, so it works unchanged on any machine. Never
-make this repository public while `.env` is tracked; if you do, untrack it and rotate every key.
+All paths in `.env` are relative to the repository, so it works unchanged on any machine. Keep keys
+in `.env` or `.env.local` (both git-ignored), never in a tracked file.
 For the full system the values are (the three Synapt values are required):
 
 | Key | Value |
@@ -233,7 +233,7 @@ Notes:
 | `artifacts/synapt/` | local card file (fallback), procedure folders, ticket workbook, old upload ledgers | no (built) |
 | `data/runtime/` | databases: saved cases, accounts, checkpoints | no (created on first run) |
 | `data/bootstrap/` | credential-free seed databases copied on first run | yes |
-| `.env` | secrets and mode switches | yes (private repository only) |
+| `.env` | secrets and mode switches | no (git-ignored; create it from `.env.example`) |
 
 ## Troubleshooting
 
