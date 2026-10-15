@@ -4,7 +4,7 @@
 
 ## What I did
 
-Read the supplied insurance-assistant PDF, `PROJECT_PLAN.md`, the completed architecture and panel
+Read the supplied insurance-assistant PDF, the original project plan, the completed architecture and panel
 presentation. The approved design uses recorded claim facts and keeps missing narratives and policy
 wording explicit. Inspected the configured `synapt_final_capstone` provider through its existing
 StreamableHTTP MCP adapter; no new provider or credentials were created.

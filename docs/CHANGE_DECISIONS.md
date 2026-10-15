@@ -350,11 +350,10 @@ Each entry gives the decision, the alternative rejected, and the evidence.
 ## Original-plan reference document and diagram archive
 
 ### What I did
-Saved `PROJECT_PLAN.md` and a self-contained `PROJECT_PLAN.html` with the complete planning substance,
-framework decision and both supplied flowcharts. Stored PNG/SVG diagram images, exact Mermaid sources
-and a byte-for-byte copy of the pasted transcript under `docs/images/project-plan/`. The HTML embeds
-both images and the original transcript; the README links to the plan. Local generation helpers are
-kept in `artifacts/` for reproducibility.
+Stored PNG/SVG images and exact Mermaid sources for both supplied flowcharts under
+`docs/images/project-plan/`; the README links to them. (The planning write-up and pasted transcript
+saved alongside them were later removed before the repository was made public.) Local generation
+helpers are kept in `artifacts/` for reproducibility.
 
 ### Why this approach
 A structured Markdown plan is easy to revisit and maintain, while the offline HTML is a portable single

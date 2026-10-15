@@ -1,7 +1,7 @@
 # Evaluation audit — 7 October 2026
 
 This audit checks evaluator correctness separately from model/retrieval quality. The approved
-`PROJECT_PLAN.md` requires deterministic schemas, citations and action boundaries together with
+the original project plan requires deterministic schemas, citations and action boundaries together with
 DeepEval and an advisory independent judge. A completed provider request is not a quality pass.
 
 ## What I did

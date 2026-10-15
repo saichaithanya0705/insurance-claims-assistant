@@ -7,9 +7,9 @@ risk, and prepares a cited brief that a person reviews. It never approves, denie
 
 ![Architecture](docs/architecture.svg)
 
-The **[original approved project plan](docs/PROJECT_PLAN.md)** preserves the Synapt-centered direction,
-feature priorities, LangGraph decision and both diagrams. An **[offline HTML copy](docs/PROJECT_PLAN.html)**
-includes the images and complete original transcript in a single file.
+The original planning diagrams are in [`docs/images/project-plan/`](docs/images/project-plan/):
+the [Synapt-centered architecture](docs/images/project-plan/synapt-centered-architecture.svg) and the
+[agent investigation workflow](docs/images/project-plan/agent-investigation-workflow.svg).
 
 ## What it does
 
